@@ -58,10 +58,14 @@ static dwt_config_t config = {
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
+#define MY_FULL_ADDRESS TAG_ADDRESS, MY_ADDRESS
+#define DST_FULL_ADDRESS ANCHOR_ADDRESS, 0x00
+static uint16_t anchor_address;
+
 /* Frames used in the ranging process. See NOTE 2 below. */
-static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0x21 };
-static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', 'A', 0x10, 0x02, 0, 0 };
-static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DST_FULL_ADDRESS, MY_FULL_ADDRESS, 0x21 };
+static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, MY_FULL_ADDRESS, DST_FULL_ADDRESS, 0x10, 0x02, 0, 0 };
+static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DST_FULL_ADDRESS, MY_FULL_ADDRESS, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
@@ -170,12 +174,15 @@ int ds_twr_initiator(void)
         /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
          * set by dwt_setrxaftertxdelay() has elapsed. */
         dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
-
+      
         /* We assume that the transmission is achieved correctly, poll for reception of a frame or error/timeout. See NOTE 10 below. */
         waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR), 0);
 
         /* Increment frame sequence number after transmission of the poll message (modulo 256). */
         frame_seq_nb++;
+
+        test_run_info((unsigned char *)"poll sent");
+
 
         if (status_reg & DWT_INT_RXFCG_BIT_MASK)
         {
@@ -193,8 +200,8 @@ int ds_twr_initiator(void)
 
             /* Check that the frame is the expected response from the companion "DS TWR responder" example.
              * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
-            rx_buffer[ALL_MSG_SN_IDX] = 0;
-            if (memcmp(rx_buffer, rx_resp_msg, ALL_MSG_COMMON_LEN) == 0)
+            //rx_buffer[ALL_MSG_SN_IDX] = 0;
+            if (frame_is_resp_for_me(rx_buffer))
             {
                 uint32_t final_tx_time;
                 int ret;
@@ -216,6 +223,8 @@ int ds_twr_initiator(void)
                 final_msg_set_ts(&tx_final_msg[FINAL_MSG_FINAL_TX_TS_IDX], final_tx_ts);
 
                 /* Write and send final message. See NOTE 9 below. */
+                anchor_address = get_src_addr(rx_buffer);
+                set_dst_addr(tx_final_msg, anchor_address);
                 tx_final_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
                 dwt_writetxdata(sizeof(tx_final_msg), tx_final_msg, 0); /* Zero offset in TX buffer. */
                 dwt_writetxfctrl(sizeof(tx_final_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging bit set. */
@@ -232,6 +241,9 @@ int ds_twr_initiator(void)
 
                     /* Increment frame sequence number after transmission of the final message (modulo 256). */
                     frame_seq_nb++;
+
+                    
+                    test_run_info((unsigned char *)"final sent");
                 }
             }
         }

@@ -6,6 +6,21 @@ extern "C"
 {
 #endif
 
+#define MY_ADDRESS          0x13
+
+#define TAG_ADDRESS         0x10
+#define ANCHOR_ADDRESS      0x20
+#define ALL_MSG_SRC_ADDR    7
+#define ALL_MSG_DST_ADDR    5
+
+bool frame_is_poll(uint8_t* rx_buffer);
+bool frame_is_resp_for_me(uint8_t* rx_buffer);
+bool frame_is_final_for_me(uint8_t* rx_buffer);
+uint16_t get_src_addr(uint8_t* msg);
+uint16_t get_dst_addr(uint8_t* msg);
+void set_src_addr(uint8_t* msg, uint16_t address);
+void set_dst_addr(uint8_t* msg, uint16_t address);
+
 /* Power boost calculation service function defines*/
 #define LUT_1000_200_US_NUM     33 /* Number of frames duration values for which look up table has corresponding dial back in units of 0.1dB*/
 #define LUT_1000_200_US_STEP    25 /* Frame duration step in us between each index in LUT */
@@ -18,6 +33,8 @@ extern "C"
 #define LUT_200_70_US_MAX_BST 113 /* Total boost to apply when a frame is equal or shorter to the minimum duration*/
 
 #define FRAME_DURATION_REF 1000 /* The reference duration for a frame is 1000us. Longer frame will have 0dB boost.*/
+
+
 
     /*! ------------------------------------------------------------------------------------------------------------------
      * @fn calculate_power_boost()

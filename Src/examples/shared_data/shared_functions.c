@@ -20,6 +20,70 @@
 
 extern dwt_config_t config_options;
 
+
+
+
+
+bool frame_is_poll(uint8_t* rx_buffer) {
+  if (rx_buffer[0] != 0x41) return false;
+  if (rx_buffer[1] != 0x88) return false;
+  if (rx_buffer[3] != 0xCA) return false;
+  if (rx_buffer[4] != 0xDE) return false;
+  
+  if (rx_buffer[5] != ANCHOR_ADDRESS) return false;
+  if (!(rx_buffer[6] == MY_ADDRESS || rx_buffer[6] == 0x00)) return false; // 0x2000 is broadcast
+  
+  if (rx_buffer[9] != 0x21) return false;
+
+  return true;
+}
+bool frame_is_resp_for_me(uint8_t* rx_buffer) {
+  if (rx_buffer[0] != 0x41) return false;
+  if (rx_buffer[1] != 0x88) return false;
+  if (rx_buffer[3] != 0xCA) return false;
+  if (rx_buffer[4] != 0xDE) return false;
+  
+  if (rx_buffer[5] != TAG_ADDRESS) return false;
+  if (rx_buffer[6] != MY_ADDRESS) return false;
+  
+  if (rx_buffer[9] != 0x10) return false;
+
+  return true;
+}
+bool frame_is_final_for_me(uint8_t* rx_buffer) {
+  if (rx_buffer[0] != 0x41) return false;
+  if (rx_buffer[1] != 0x88) return false;
+  if (rx_buffer[3] != 0xCA) return false;
+  if (rx_buffer[4] != 0xDE) return false;
+  
+  if (rx_buffer[5] != ANCHOR_ADDRESS) return false;
+  if (!(rx_buffer[6] == MY_ADDRESS )) return false;
+
+  if (rx_buffer[9] != 0x23) return false;
+
+  return true;
+}
+uint16_t get_src_addr(uint8_t* msg) {
+  uint16_t src_addr = msg[ALL_MSG_SRC_ADDR] * 0x100 + msg[ALL_MSG_SRC_ADDR + 1];
+  return src_addr;
+ }
+uint16_t get_dst_addr(uint8_t* msg) {
+  uint16_t dst_addr = msg[ALL_MSG_DST_ADDR] * 0x100 + msg[ALL_MSG_DST_ADDR + 1];
+  return dst_addr;
+}
+void set_src_addr(uint8_t* msg, uint16_t address) {
+  msg[ALL_MSG_SRC_ADDR] = address / 0x100;
+  msg[ALL_MSG_SRC_ADDR + 1] = address % 0x100;
+}
+void set_dst_addr(uint8_t* msg, uint16_t address) {
+  msg[ALL_MSG_DST_ADDR] = address / 0x100;
+  msg[ALL_MSG_DST_ADDR + 1] = address % 0x100;
+}
+
+
+
+
+
 /*Reference look-up table to calculate TxPower boost depending on frame duration
  * Using two different tables as per logarithmic calculation:
  *   - 1000us to 200us range - index unit of 25us

@@ -57,10 +57,13 @@ static dwt_config_t config = {
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
+#define MY_FULL_ADDRESS ANCHOR_ADDRESS, MY_ADDRESS
+static uint16_t tag_address;
+
 /* Frames used in the ranging process. See NOTE 2 below. */
-static uint8_t rx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0x21, 0, 0 };
-static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', 'A', 0x10, 0x02, 0, 0, 0, 0 };
-static uint8_t rx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t rx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, MY_FULL_ADDRESS, 0x00, 0x00, 0x21, 0, 0 };
+static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_FULL_ADDRESS, 0x10, 0x02, 0, 0, 0, 0 };
+static uint8_t rx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, MY_FULL_ADDRESS, 0x00, 0x00, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Index to access some of the fields in the frames involved in the process. */
@@ -68,6 +71,7 @@ static uint8_t rx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E',
 #define FINAL_MSG_POLL_TX_TS_IDX  10
 #define FINAL_MSG_RESP_RX_TS_IDX  14
 #define FINAL_MSG_FINAL_TX_TS_IDX 18
+
 /* Frame sequence number, incremented after each transmission. */
 static uint8_t frame_seq_nb = 0;
 
@@ -183,8 +187,7 @@ int ds_twr_responder(void)
 
             /* Check that the frame is a poll sent by "DS TWR initiator" example.
              * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
-            rx_buffer[ALL_MSG_SN_IDX] = 0;
-            if (memcmp(rx_buffer, rx_poll_msg, ALL_MSG_COMMON_LEN) == 0)
+            if (frame_is_poll(rx_buffer))
             {
                 uint32_t resp_tx_time;
                 int ret;
@@ -203,6 +206,8 @@ int ds_twr_responder(void)
                 dwt_setpreambledetecttimeout(PRE_TIMEOUT);
 
                 /* Write and send the response message. See NOTE 10 below.*/
+                tag_address = get_src_addr(rx_buffer);
+                set_dst_addr(tx_resp_msg, tag_address);
                 tx_resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
                 dwt_writetxdata(sizeof(tx_resp_msg), tx_resp_msg, 0); /* Zero offset in TX buffer. */
                 dwt_writetxfctrl(sizeof(tx_resp_msg), 0, 1);          /* Zero offset in TX buffer, ranging. */
@@ -213,6 +218,10 @@ int ds_twr_responder(void)
                 {
                     continue;
                 }
+
+                
+                test_run_info((unsigned char *)"resp sent");
+
 
                 /* Poll for reception of expected "final" frame or error/timeout. See NOTE 8 below. */
                 waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR), 0);
@@ -235,7 +244,7 @@ int ds_twr_responder(void)
                     /* Check that the frame is a final message sent by "DS TWR initiator" example.
                      * As the sequence number field of the frame is not used in this example, it can be zeroed to ease the validation of the frame. */
                     rx_buffer[ALL_MSG_SN_IDX] = 0;
-                    if (memcmp(rx_buffer, rx_final_msg, ALL_MSG_COMMON_LEN) == 0)
+                    if (frame_is_final_for_me(rx_buffer))
                     {
                         uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
                         uint32_t poll_rx_ts_32, resp_tx_ts_32, final_rx_ts_32;
@@ -264,7 +273,8 @@ int ds_twr_responder(void)
                         tof = tof_dtu * DWT_TIME_UNITS;
                         distance = tof * SPEED_OF_LIGHT;
                         /* Display computed distance on LCD. */
-                        sprintf(dist_str, "DIST: %3.2f m", distance);
+                        tag_address = get_src_addr(rx_buffer);
+                        sprintf(dist_str, "%x: DIST: %3.2f m", tag_address, distance);
                         test_run_info((unsigned char *)dist_str);
 
                         /* as DS-TWR initiator is waiting for RNG_DELAY_MS before next poll transmission
