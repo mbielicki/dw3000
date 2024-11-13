@@ -83,9 +83,6 @@
         <folder Name="ex_00a_reading_dev_id">
           <file file_name="$(DW3000APIDir)/Src/examples/ex_00a_reading_dev_id/read_dev_id.c" />
         </folder>
-        <folder Name="ex_01a_simple_tx">
-          <file file_name="$(DW3000APIDir)/Src/examples/ex_01a_simple_tx/simple_tx.c" />
-        </folder>
         <folder Name="ex_02a_simple_rx">
           <file file_name="$(DW3000APIDir)/Src/examples/ex_02a_simple_rx/simple_rx.c" />
           <file file_name="$(DW3000APIDir)/Src/examples/ex_02a_simple_rx/simple_rx_nlos.c" />
@@ -151,6 +148,9 @@
         </folder>
         <folder Name="ex_01g_simple_tx_sts_sdc">
           <file file_name="$(DW3000APIDir)/Src/examples/ex_01g_simple_tx_sts_sdc/simple_tx_sts_sdc.c" />
+          <folder Name="ex_01a_simple_tx">
+            <file file_name="$(DW3000APIDir)/Src/examples/ex_01a_simple_tx/simple_tx.c" />
+          </folder>
         </folder>
         <folder Name="ex_01i_simple_tx_aes">
           <file file_name="$(DW3000APIDir)/Src/examples/ex_01i_simple_tx_aes/simple_tx_aes.c" />

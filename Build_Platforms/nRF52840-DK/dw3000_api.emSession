@@ -1,7 +1,9 @@
 <!DOCTYPE CrossStudio_Session_File>
 <session>
  <Bookmarks/>
- <Breakpoints groups="Breakpoints" active_group="Breakpoints"/>
+ <Breakpoints groups="Breakpoints" active_group="Breakpoints">
+  <Exceptions set="MemManage;UsageFault_Coprocessor;UsageFault_CheckingError;UsageFault_StateError;BusFault;ExceptionEntryReturnFault;HardFault"/>
+ </Breakpoints>
  <ExecutionProfileWindow/>
  <FrameBufferWindow>
   <FrameBufferWindow bufferHeight="-1" addressSpace="" addressText="" bufferWidth="-1"/>
@@ -21,13 +23,15 @@
  <Project>
   <ProjectSessionItem path="dw3000_api"/>
   <ProjectSessionItem path="dw3000_api;dw3000_api"/>
-  <ProjectSessionItem path="dw3000_api;dw3000_api;SEGGER"/>
   <ProjectSessionItem path="dw3000_api;dw3000_api;Source"/>
   <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples"/>
-  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;ex_01a_simple_tx"/>
-  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;ex_05a_ds_twr_init"/>
+  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;ex_03d_tx_wait_resp_interrupts"/>
+  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;ex_04a_cont_wave"/>
   <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;ex_05b_ds_twr_resp"/>
-  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;examples_info"/>
+  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;ex_05c_ds_twr_init_sts_sdc"/>
+  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;ex_06e_AES_ss_twr_initiator"/>
+  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;examples;shared_data"/>
+  <ProjectSessionItem path="dw3000_api;dw3000_api;Source;platform"/>
   <ProjectSessionItem path="dw3000_api;dw3000_api;System"/>
  </Project>
  <Register1>
@@ -61,12 +65,11 @@
   <Watches active="0" update="Never"/>
  </Watch4>
  <Files>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="114" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" selected="0" top="108" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="66" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/example_selection.h" selected="0" top="36" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="116" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" selected="0" top="87" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="97" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" useBinaryEdit="0" left="0" path="Source/main.c" selected="1" top="85" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="397" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/examples_info/example_info.c" selected="0" top="374" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="71" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="sdk/modules/nrfx/mdk/ses_startup_nrf52840.s" selected="0" top="49" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="56" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/example_selection.h" selected="0" top="42" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="60" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" selected="0" top="39" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="72" y="186" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" selected="1" top="171" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="88" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" useBinaryEdit="0" left="0" path="Source/main.c" selected="0" top="72" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="504" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" useBinaryEdit="0" left="0" path="../../Src/examples/shared_data/shared_functions.c" selected="0" top="488" codecName="Default"/>
  </Files>
  <ARMCrossStudioWindow activeProject="dw3000_api" fileDialogDefaultFilter="*.c" autoConnectTarget="J-Link" buildConfiguration="Debug" sessionSettings="" debugSearchFileMap="" fileDialogInitialDirectory="" debugSearchPath="" autoConnectCapabilities="3711"/>
 </session>
