@@ -281,13 +281,6 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 {
     int i;
 
-    /* Clear local RX buffer to avoid having leftovers from previous receptions. This is not necessary but is included here to aid reading the RX
-     * buffer. */
-    for (i = 0; i < RX_BUF_LEN; i++)
-    {
-        rx_buffer[i] = 0;
-    }
-
     /* A frame has been received, copy it to our local buffer. */
     if (cb_data->datalength <= FRAME_LEN_MAX)
     {
@@ -303,14 +296,7 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     }
     else 
       test_run_info((unsigned char *)"got sth");
-      
 
-    dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK | DWT_INT_TXFRS_BIT_MASK);
-
-
-    dwt_setpreambledetecttimeout(0);
-    /* Clear reception timeout to start next ranging process. */
-    dwt_setrxtimeout(0);
 
     /* Activate reception immediately. */
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
