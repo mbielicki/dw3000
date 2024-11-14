@@ -91,9 +91,9 @@ static uint32_t status_reg = 0;
  * This value is required to be larger than POLL_TX_TO_RESP_RX_DLY_UUS. Please see NOTE 4 for more details. */
 #define RESP_RX_TO_FINAL_TX_DLY_UUS (300 + CPU_PROCESSING_TIME)
 /* Receive response timeout. See NOTE 5 below. */
-#define RESP_RX_TIMEOUT_UUS 300
+#define RESP_RX_TIMEOUT_UUS 9000//300
 /* Preamble timeout, in multiple of PAC size. See NOTE 7 below. */
-#define PRE_TIMEOUT 5
+#define PRE_TIMEOUT 9000//5
 
 /* Time-stamps of frames transmission/reception, expressed in device time units. */
 static uint64_t poll_tx_ts;
@@ -154,7 +154,7 @@ int ds_twr_initiator(void)
 
     /* Set expected response's delay and timeout. See NOTE 4, 5 and 7 below.
      * As this example only handles one incoming frame with always the same delay and timeout, those values can be set here once for all. */
-    dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
+    dwt_setrxaftertxdelay(0);
     dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
     dwt_setpreambledetecttimeout(PRE_TIMEOUT);
 
@@ -174,6 +174,7 @@ int ds_twr_initiator(void)
         /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
          * set by dwt_setrxaftertxdelay() has elapsed. */
         dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+        test_run_info((unsigned char *)"poll sent");
       
         /* We assume that the transmission is achieved correctly, poll for reception of a frame or error/timeout. See NOTE 10 below. */
         waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR), 0);
@@ -181,7 +182,6 @@ int ds_twr_initiator(void)
         /* Increment frame sequence number after transmission of the poll message (modulo 256). */
         frame_seq_nb++;
 
-        test_run_info((unsigned char *)"poll sent");
 
 
         if (status_reg & DWT_INT_RXFCG_BIT_MASK)
@@ -203,6 +203,7 @@ int ds_twr_initiator(void)
             //rx_buffer[ALL_MSG_SN_IDX] = 0;
             if (frame_is_resp_for_me(rx_buffer))
             {
+                test_run_info((unsigned char *)"got resp");
                 uint32_t final_tx_time;
                 int ret;
 
