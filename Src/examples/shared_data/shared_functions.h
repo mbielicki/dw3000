@@ -6,7 +6,7 @@ extern "C"
 {
 #endif
 
-#define MY_ADDRESS          0x13
+#define MY_ADDRESS          0x98
 
 #define TAG_ADDRESS         0x10
 #define ANCHOR_ADDRESS      0x20
