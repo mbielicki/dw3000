@@ -276,7 +276,8 @@ int ds_twr_responder(void)
                         distance = tof * SPEED_OF_LIGHT;
                         /* Display computed distance on LCD. */
                         tag_address = get_src_addr(rx_buffer);
-                        sprintf(dist_str, "%x: DIST: %3.2f m", tag_address, distance);
+                        double communication_time = (Rb + Db) * DWT_TIME_UNITS * 1000;
+                        sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f", tag_address, distance, communication_time);
                         test_run_info((unsigned char *)dist_str);
 
                         /* as DS-TWR initiator is waiting for RNG_DELAY_MS before next poll transmission
