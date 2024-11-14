@@ -122,10 +122,6 @@ void handle_poll() {
       
       test_run_info((unsigned char *)"got poll");
 
-      /* Set send time for response. See NOTE 9 below. */
-      resp_tx_time = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
-      dwt_setdelayedtrxtime(resp_tx_time);
-
       /* Set expected delay and timeout for final message reception. See NOTE 4 and 5 below. */
       dwt_setrxaftertxdelay(RESP_TX_TO_FINAL_RX_DLY_UUS);
       dwt_setrxtimeout(FINAL_RX_TIMEOUT_UUS);
@@ -138,7 +134,7 @@ void handle_poll() {
       tx_resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
       dwt_writetxdata(sizeof(tx_resp_msg), tx_resp_msg, 0); /* Zero offset in TX buffer. */
       dwt_writetxfctrl(sizeof(tx_resp_msg), 0, 1);          /* Zero offset in TX buffer, ranging. */
-      ret = dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
+      ret = dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
       /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 11 below. */
       if (ret == DWT_ERROR)
