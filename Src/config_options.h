@@ -54,7 +54,7 @@
  * DWT_ERROR status allows the user to tweak their system to calculate the
  * shortest turn-around time for messages.
  */
-#define CPU_PROCESSING_TIME 400
+#define CPU_PROCESSING_TIME 500//400
 
 /*
  * SPI Rate Configuration Settings

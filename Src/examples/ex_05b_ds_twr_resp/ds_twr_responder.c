@@ -86,9 +86,9 @@ static uint32_t status_reg = 0;
 /* Delay between frames, in UWB microseconds. See NOTE 4 below. */
 /* This is the delay from Frame RX timestamp to TX reply timestamp used for calculating/setting the DW IC's delayed TX function. This includes the
  * frame length of approximately 190 us with above configuration. */
-#define POLL_RX_TO_RESP_TX_DLY_UUS 950 //900
+#define POLL_RX_TO_RESP_TX_DLY_UUS 900
 /* This is the delay from the end of the frame transmission to the enable of the receiver, as programmed for the DW IC's wait for response feature. */
-#define RESP_TX_TO_FINAL_RX_DLY_UUS 500
+#define RESP_TX_TO_FINAL_RX_DLY_UUS 300//500
 /* Receive final timeout. See NOTE 5 below. */
 #define FINAL_RX_TIMEOUT_UUS 220
 /* Preamble timeout, in multiple of PAC size. See NOTE 6 below. */
