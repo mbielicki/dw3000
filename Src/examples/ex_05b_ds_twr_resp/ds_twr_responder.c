@@ -270,7 +270,8 @@ int ds_twr_responder(void)
                         Rb = (double)(final_rx_ts_32 - resp_tx_ts_32);
                         Da = (double)(final_tx_ts - resp_rx_ts);
                         Db = (double)(resp_tx_ts_32 - poll_rx_ts_32);
-                        tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
+                        //tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
+                        tof_dtu = (int64_t)((Ra + Rb - Da - Db) / 4);
 
                         tof = tof_dtu * DWT_TIME_UNITS;
                         distance = tof * SPEED_OF_LIGHT;
