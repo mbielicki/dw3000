@@ -86,7 +86,7 @@ static uint32_t status_reg = 0;
 /* Delay between frames, in UWB microseconds. See NOTE 4 below. */
 /* This is the delay from Frame RX timestamp to TX reply timestamp used for calculating/setting the DW IC's delayed TX function. This includes the
  * frame length of approximately 190 us with above configuration. */
-#define POLL_RX_TO_RESP_TX_DLY_UUS 900
+#define POLL_RX_TO_RESP_TX_DLY_UUS 610//900
 /* This is the delay from the end of the frame transmission to the enable of the receiver, as programmed for the DW IC's wait for response feature. */
 #define RESP_TX_TO_FINAL_RX_DLY_UUS 300//500
 /* Receive final timeout. See NOTE 5 below. */
@@ -194,6 +194,8 @@ int ds_twr_responder(void)
 
                 /* Retrieve poll reception timestamp. */
                 poll_rx_ts = get_rx_timestamp_u64();
+                
+                test_run_info((unsigned char *)"got poll");
 
                 /* Set send time for response. See NOTE 9 below. */
                 resp_tx_time = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
