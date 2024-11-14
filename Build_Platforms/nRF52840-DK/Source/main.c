@@ -73,9 +73,10 @@ extern void build_examples(void);
  *
  * no return value
  */
+uint8_t n = 0;
 void test_run_info(unsigned char *data)
 {
-    printf("%s\n", data);
+    printf("%i: %s\n", n++, data);
 }
 
 /*********************************************************************
