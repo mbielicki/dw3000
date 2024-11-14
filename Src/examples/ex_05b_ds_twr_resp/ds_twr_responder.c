@@ -113,6 +113,45 @@ static void rx_err_cb(const dwt_cb_data_t *cb_data);
 
 uint16_t frame_len;
 
+void handle_final() {
+    uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
+    uint32_t poll_rx_ts_32, resp_tx_ts_32, final_rx_ts_32;
+    double Ra, Rb, Da, Db;
+    int64_t tof_dtu;
+
+    /* Retrieve response transmission and final reception timestamps. */
+    resp_tx_ts = get_tx_timestamp_u64();
+    final_rx_ts = get_rx_timestamp_u64();
+
+    /* Get timestamps embedded in the final message. */
+    final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
+    final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
+    final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
+
+    /* Compute time of flight. 32-bit subtractions give correct answers even if clock has wrapped. See NOTE 12 below. */
+    poll_rx_ts_32 = (uint32_t)poll_rx_ts;
+    resp_tx_ts_32 = (uint32_t)resp_tx_ts;
+    final_rx_ts_32 = (uint32_t)final_rx_ts;
+    Ra = (double)(resp_rx_ts - poll_tx_ts);
+    Rb = (double)(final_rx_ts_32 - resp_tx_ts_32);
+    Da = (double)(final_tx_ts - resp_rx_ts);
+    Db = (double)(resp_tx_ts_32 - poll_rx_ts_32);
+    //tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
+    tof_dtu = (int64_t)((Ra + Rb - Da - Db) / 4);
+
+    tof = tof_dtu * DWT_TIME_UNITS;
+    distance = tof * SPEED_OF_LIGHT;
+    /* Display computed distance on LCD. */
+    tag_address = get_src_addr(rx_buffer);
+    double communication_time = (Rb + Db) * DWT_TIME_UNITS * 1000;
+    sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f", tag_address, distance, communication_time);
+    test_run_info((unsigned char *)dist_str);
+
+    poll_rx_ts = 0;
+    resp_tx_ts = 0;
+    final_rx_ts = 0;
+}
+
 void handle_poll() {
       uint32_t resp_tx_time;
       int ret;
@@ -141,76 +180,8 @@ void handle_poll() {
       {
           test_run_info((unsigned char *)"ERROR: send resp");
       }
-      else
+      else {
         test_run_info((unsigned char *)"resp sent");
-
-
-      /* Poll for reception of expected "final" frame or error/timeout. See NOTE 8 below. */
-      waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR), 0);
-
-      /* Increment frame sequence number after transmission of the response message (modulo 256). */
-      frame_seq_nb++;
-
-      if (status_reg & DWT_INT_RXFCG_BIT_MASK)
-      {
-          /* Clear good RX frame event and TX frame sent in the DW IC status register. */
-          dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK | DWT_INT_TXFRS_BIT_MASK);
-
-          /* A frame has been received, read it into the local buffer. */
-          frame_len = dwt_getframelength();
-          if (frame_len <= RX_BUF_LEN)
-          {
-              dwt_readrxdata(rx_buffer, frame_len, 0);
-          }
-
-          /* Check that the frame is a final message sent by "DS TWR initiator" example.
-           * As the sequence number field of the frame is not used in this example, it can be zeroed to ease the validation of the frame. */
-          rx_buffer[ALL_MSG_SN_IDX] = 0;
-          if (frame_is_final_for_me(rx_buffer))
-          {
-              uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
-              uint32_t poll_rx_ts_32, resp_tx_ts_32, final_rx_ts_32;
-              double Ra, Rb, Da, Db;
-              int64_t tof_dtu;
-
-              /* Retrieve response transmission and final reception timestamps. */
-              resp_tx_ts = get_tx_timestamp_u64();
-              final_rx_ts = get_rx_timestamp_u64();
-
-              /* Get timestamps embedded in the final message. */
-              final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
-              final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
-              final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
-
-              /* Compute time of flight. 32-bit subtractions give correct answers even if clock has wrapped. See NOTE 12 below. */
-              poll_rx_ts_32 = (uint32_t)poll_rx_ts;
-              resp_tx_ts_32 = (uint32_t)resp_tx_ts;
-              final_rx_ts_32 = (uint32_t)final_rx_ts;
-              Ra = (double)(resp_rx_ts - poll_tx_ts);
-              Rb = (double)(final_rx_ts_32 - resp_tx_ts_32);
-              Da = (double)(final_tx_ts - resp_rx_ts);
-              Db = (double)(resp_tx_ts_32 - poll_rx_ts_32);
-              //tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
-              tof_dtu = (int64_t)((Ra + Rb - Da - Db) / 4);
-
-              tof = tof_dtu * DWT_TIME_UNITS;
-              distance = tof * SPEED_OF_LIGHT;
-              /* Display computed distance on LCD. */
-              tag_address = get_src_addr(rx_buffer);
-              double communication_time = (Rb + Db) * DWT_TIME_UNITS * 1000;
-              sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f", tag_address, distance, communication_time);
-              test_run_info((unsigned char *)dist_str);
-
-              /* as DS-TWR initiator is waiting for RNG_DELAY_MS before next poll transmission
-               * we can add a delay here before RX is re-enabled again
-               */
-              Sleep(RNG_DELAY_MS - 10); // start couple of ms earlier
-          }
-      }
-      else
-      {
-          /* Clear RX error/timeout events in the DW IC status register. */
-          dwt_writesysstatuslo(SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
       }
 }
 
@@ -286,11 +257,11 @@ int ds_twr_responder(void)
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
     dwt_setpreambledetecttimeout(0);
-        /* Clear reception timeout to start next ranging process. */
-        dwt_setrxtimeout(0);
+    /* Clear reception timeout to start next ranging process. */
+    dwt_setrxtimeout(0);
 
-        /* Activate reception immediately. */
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    /* Activate reception immediately. */
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
     while (1) {}
 
@@ -312,7 +283,7 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 
     /* Clear local RX buffer to avoid having leftovers from previous receptions. This is not necessary but is included here to aid reading the RX
      * buffer. */
-    for (i = 0; i < FRAME_LEN_MAX; i++)
+    for (i = 0; i < RX_BUF_LEN; i++)
     {
         rx_buffer[i] = 0;
     }
@@ -328,11 +299,15 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     }
     else if (frame_is_final_for_me(rx_buffer)) {
       test_run_info((unsigned char *)"got final");
-      //receive_final();
+      handle_final();
     }
     else 
       test_run_info((unsigned char *)"got sth");
       
+
+    dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK | DWT_INT_TXFRS_BIT_MASK);
+
+
     dwt_setpreambledetecttimeout(0);
     /* Clear reception timeout to start next ranging process. */
     dwt_setrxtimeout(0);
