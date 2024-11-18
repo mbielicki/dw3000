@@ -136,7 +136,6 @@ void handle_poll() {
       if (ret == DWT_SUCCESS)
       {
           frame_seq_nb++;
-          test_run_info((unsigned char *)"final sent");
       }
       else {
         test_run_info((unsigned char *)"final sending ERROR");
@@ -302,7 +301,7 @@ static void tx_conf_cb(const dwt_cb_data_t *cb_data)
 {
     (void)cb_data;
     
-    test_run_info((unsigned char *)"tx conf");
+    test_run_info((unsigned char *)"final sent");
     /* This callback has been defined so that a breakpoint can be put here to check it is correctly called but there is actually nothing specific to
      * do on transmission confirmation in this example. Typically, we could activate reception for the response here but this is automatically handled
      * by DW IC using DWT_RESPONSE_EXPECTED parameter when calling dwt_starttx().
