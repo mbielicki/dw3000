@@ -126,7 +126,8 @@ void handle_final() {
     distance = tof * SPEED_OF_LIGHT;
     /* Display computed distance on LCD. */
     anchor_address = get_src_addr(rx_buffer);
-    sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f", anchor_address, distance, tag_comm_time);
+    double comm_time_us =  tag_comm_time * DWT_TIME_UNITS * 1000 * 1000;
+    sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f µs", anchor_address, distance, comm_time_us);
     test_run_info((unsigned char *)dist_str);
 }
 
@@ -202,7 +203,7 @@ int ds_twr_initiator(void)
     /* Enable wanted interrupts (TX confirmation, RX good frames, RX timeouts and RX errors). */
     dwt_setinterrupt(DWT_INT_TXFRS_BIT_MASK | DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFTO_BIT_MASK | DWT_INT_RXPTO_BIT_MASK | DWT_INT_RXPHE_BIT_MASK
                          | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK,
-        0, DWT_ENABLE_INT);
+                          0, DWT_ENABLE_INT);
     /*Clearing the SPI ready interrupt*/
     dwt_writesysstatuslo(DWT_INT_RCINIT_BIT_MASK | DWT_INT_SPIRDY_BIT_MASK);
     /* Install DW IC IRQ handler. */

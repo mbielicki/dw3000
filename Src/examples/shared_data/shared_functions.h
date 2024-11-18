@@ -6,7 +6,7 @@ extern "C"
 {
 #endif
 
-#define MY_ADDRESS          0x98
+#define MY_ADDRESS          0x99
 
 #define TAG_ADDRESS         0x10
 #define ANCHOR_ADDRESS      0x20
@@ -14,7 +14,6 @@ extern "C"
 #define ALL_MSG_DST_ADDR    5
 
 bool frame_is_poll(uint8_t* rx_buffer);
-bool frame_is_resp_for_me(uint8_t* rx_buffer);
 bool frame_is_final_for_me(uint8_t* rx_buffer);
 uint16_t get_src_addr(uint8_t* msg);
 uint16_t get_dst_addr(uint8_t* msg);
