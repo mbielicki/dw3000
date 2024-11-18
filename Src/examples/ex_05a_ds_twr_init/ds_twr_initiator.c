@@ -52,7 +52,7 @@ static dwt_config_t config = {
 };
 
 /* Inter-ranging delay period, in milliseconds. */
-#define RNG_DELAY_MS 9000 //1000
+#define RNG_DELAY_MS 1000 //1000
 
 /* Default antenna delay values for 64 MHz PRF. See NOTE 1 below. */
 #define TX_ANT_DLY 16385
@@ -64,15 +64,12 @@ static uint16_t anchor_address;
 
 /* Frames used in the ranging process. See NOTE 2 below. */
 static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DST_FULL_ADDRESS, MY_FULL_ADDRESS, 0x21 };
-static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, MY_FULL_ADDRESS, DST_FULL_ADDRESS, 0x10, 0x02, 0, 0 };
-static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DST_FULL_ADDRESS, MY_FULL_ADDRESS, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
 #define ALL_MSG_SN_IDX            2
-#define FINAL_MSG_POLL_TX_TS_IDX  10
-#define FINAL_MSG_RESP_RX_TS_IDX  14
-#define FINAL_MSG_FINAL_TX_TS_IDX 18
+#define FINAL_MSG_POLL_RX_TS_IDX  10
+#define FINAL_MSG_FINAL_TX_TS_IDX 14
 /* Frame sequence number, incremented after each transmission. */
 static uint8_t frame_seq_nb = 0;
 
@@ -86,19 +83,69 @@ static uint32_t status_reg = 0;
 
 /* Delay between frames, in UWB microseconds. See NOTE 4 below. */
 /* This is the delay from the end of the frame transmission to the enable of the receiver, as programmed for the DW IC's wait for response feature. */
-#define POLL_TX_TO_RESP_RX_DLY_UUS (-20 + CPU_PROCESSING_TIME)//(300 + CPU_PROCESSING_TIME)
-/* This is the delay from Frame RX timestamp to TX reply timestamp used for calculating/setting the DW IC's delayed TX function.
- * This value is required to be larger than POLL_TX_TO_RESP_RX_DLY_UUS. Please see NOTE 4 for more details. */
-#define RESP_RX_TO_FINAL_TX_DLY_UUS (20 + CPU_PROCESSING_TIME)//(300 + CPU_PROCESSING_TIME)
-/* Receive response timeout. See NOTE 5 below. */
-#define RESP_RX_TIMEOUT_UUS 300
-/* Preamble timeout, in multiple of PAC size. See NOTE 7 below. */
-#define PRE_TIMEOUT 5
+#define POLL_TX_TO_RESP_RX_DLY_UUS 0//(0 + CPU_PROCESSING_TIME)//(300 + CPU_PROCESSING_TIME)
 
-/* Time-stamps of frames transmission/reception, expressed in device time units. */
-static uint64_t poll_tx_ts;
-static uint64_t resp_rx_ts;
-static uint64_t final_tx_ts;
+#define NEW_POLL_DLY 50 * 1000 * 1000
+
+
+static void rx_ok_cb(const dwt_cb_data_t *cb_data);
+static void rx_to_cb(const dwt_cb_data_t *cb_data);
+static void rx_err_cb(const dwt_cb_data_t *cb_data);
+static void tx_conf_cb(const dwt_cb_data_t *cb_data);
+
+#define N_ANCHORS 3
+
+static float dist_to_anchor[N_ANCHORS];
+
+
+void handle_final() {
+    uint64_t poll_tx_ts, final_rx_ts;
+    uint32_t poll_tx_ts_32, final_rx_ts_32;
+    uint32_t poll_rx_ts, final_tx_ts;
+    double tag_comm_time, anchor_comm_time;
+    int64_t tof_dtu;
+    double tof;
+    double distance;
+
+    /* Retrieve response transmission and final reception timestamps. */
+    poll_tx_ts = get_tx_timestamp_u64();
+    final_rx_ts = get_rx_timestamp_u64();
+
+    /* Get timestamps embedded in the final message. */
+    final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_RX_TS_IDX], &poll_rx_ts);
+    final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
+
+    /* Compute time of flight. 32-bit subtractions give correct answers even if clock has wrapped. See NOTE 12 below. */
+    poll_tx_ts_32 = (uint32_t)poll_tx_ts;
+    final_rx_ts_32 = (uint32_t)final_rx_ts;
+    tag_comm_time = (double)(final_rx_ts_32 - poll_tx_ts_32);
+    anchor_comm_time = (double)(final_tx_ts - poll_rx_ts);
+    tof_dtu = (int64_t)((tag_comm_time - anchor_comm_time) / 2);
+
+    tof = tof_dtu * DWT_TIME_UNITS;
+    distance = tof * SPEED_OF_LIGHT;
+    /* Display computed distance on LCD. */
+    anchor_address = get_src_addr(rx_buffer);
+    sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f", anchor_address, distance, tag_comm_time);
+    test_run_info((unsigned char *)dist_str);
+}
+
+void send_poll() {
+
+    dwt_forcetrxoff();
+    /* Write frame data to DW IC and prepare transmission. See NOTE 9 below. */
+    tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+    dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);  /* Zero offset in TX buffer. */
+    dwt_writetxfctrl(sizeof(tx_poll_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging. */
+
+    dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
+    dwt_setpreambledetecttimeout(0);
+    dwt_setrxtimeout(0);
+
+    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    
+    frame_seq_nb++;
+}
 
 /* Values for the PG_DELAY and TX_POWER registers reflect the bandwidth and power of the spectrum at the current
  * temperature. These values can be calibrated prior to taking reference measurements. See NOTE 8 below. */
@@ -148,15 +195,28 @@ int ds_twr_initiator(void)
     /* Configure the TX spectrum parameters (power, PG delay and PG count) */
     dwt_configuretxrf(&txconfig_options);
 
+
+
+    /* Register the call-backs (SPI CRC error callback is not used). */
+    dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb, NULL, NULL, NULL);
+    /* Enable wanted interrupts (TX confirmation, RX good frames, RX timeouts and RX errors). */
+    dwt_setinterrupt(DWT_INT_TXFRS_BIT_MASK | DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFTO_BIT_MASK | DWT_INT_RXPTO_BIT_MASK | DWT_INT_RXPHE_BIT_MASK
+                         | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK,
+        0, DWT_ENABLE_INT);
+    /*Clearing the SPI ready interrupt*/
+    dwt_writesysstatuslo(DWT_INT_RCINIT_BIT_MASK | DWT_INT_SPIRDY_BIT_MASK);
+    /* Install DW IC IRQ handler. */
+    port_set_dwic_isr(dwt_isr);
+    
+
+
     /* Apply default antenna delay value. See NOTE 1 below. */
     dwt_setrxantennadelay(RX_ANT_DLY);
     dwt_settxantennadelay(TX_ANT_DLY);
 
-    /* Set expected response's delay and timeout. See NOTE 4, 5 and 7 below.
-     * As this example only handles one incoming frame with always the same delay and timeout, those values can be set here once for all. */
-    dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
-    dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
-    dwt_setpreambledetecttimeout(PRE_TIMEOUT);
+
+    dwt_setpreambledetecttimeout(0);
+    dwt_setrxtimeout(0);
 
     /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
      * Note, in real low power applications the LEDs should not be used. */
@@ -166,99 +226,95 @@ int ds_twr_initiator(void)
     /* Loop forever initiating ranging exchanges. */
     while (1)
     {
-        /* Write frame data to DW IC and prepare transmission. See NOTE 9 below. */
-        tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
-        dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);  /* Zero offset in TX buffer. */
-        dwt_writetxfctrl(sizeof(tx_poll_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging. */
-
-        /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
-         * set by dwt_setrxaftertxdelay() has elapsed. */
-        dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
-        
-        test_run_info((unsigned char *)"poll sent");
-      
-        /* We assume that the transmission is achieved correctly, poll for reception of a frame or error/timeout. See NOTE 10 below. */
-        waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR), 0);
-
-        /* Increment frame sequence number after transmission of the poll message (modulo 256). */
-        frame_seq_nb++;
-
-
-
-        if (status_reg & DWT_INT_RXFCG_BIT_MASK)
-        {
-            test_run_info((unsigned char *)"got resp");
-            uint16_t frame_len;
-
-            /* Clear good RX frame event and TX frame sent in the DW IC status register. */
-            dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK | DWT_INT_TXFRS_BIT_MASK);
-
-            /* A frame has been received, read it into the local buffer. */
-            frame_len = dwt_getframelength();
-            if (frame_len <= RX_BUF_LEN)
-            {
-                dwt_readrxdata(rx_buffer, frame_len, 0);
-            }
-
-            /* Check that the frame is the expected response from the companion "DS TWR responder" example.
-             * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
-            //rx_buffer[ALL_MSG_SN_IDX] = 0;
-            if (frame_is_resp_for_me(rx_buffer))
-            {
-                uint32_t final_tx_time;
-                int ret;
-
-                /* Retrieve poll transmission and response reception timestamp. */
-                poll_tx_ts = get_tx_timestamp_u64();
-                resp_rx_ts = get_rx_timestamp_u64();
-
-                /* Compute final message transmission time. See NOTE 11 below. */
-                final_tx_time = (resp_rx_ts + (RESP_RX_TO_FINAL_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
-                dwt_setdelayedtrxtime(final_tx_time);
-
-                /* Final TX timestamp is the transmission time we programmed plus the TX antenna delay. */
-                final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
-
-                /* Write all timestamps in the final message. See NOTE 12 below. */
-                final_msg_set_ts(&tx_final_msg[FINAL_MSG_POLL_TX_TS_IDX], poll_tx_ts);
-                final_msg_set_ts(&tx_final_msg[FINAL_MSG_RESP_RX_TS_IDX], resp_rx_ts);
-                final_msg_set_ts(&tx_final_msg[FINAL_MSG_FINAL_TX_TS_IDX], final_tx_ts);
-
-                /* Write and send final message. See NOTE 9 below. */
-                anchor_address = get_src_addr(rx_buffer);
-                set_dst_addr(tx_final_msg, anchor_address);
-                tx_final_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
-                dwt_writetxdata(sizeof(tx_final_msg), tx_final_msg, 0); /* Zero offset in TX buffer. */
-                dwt_writetxfctrl(sizeof(tx_final_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging bit set. */
-
-                ret = dwt_starttx(DWT_START_TX_DELAYED);
-                /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 13 below. */
-                if (ret == DWT_SUCCESS)
-                {
-                    /* Poll DW IC until TX frame sent event set. See NOTE 10 below. */
-                    waitforsysstatus(NULL, NULL, DWT_INT_TXFRS_BIT_MASK, 0);
-
-                    /* Clear TXFRS event. */
-                    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
-
-                    /* Increment frame sequence number after transmission of the final message (modulo 256). */
-                    frame_seq_nb++;
-
-                    
-                    test_run_info((unsigned char *)"final sent");
-                }
-            }
-        }
-        else
-        {
-            /* Clear RX error/timeout events in the DW IC status register. */
-            dwt_writesysstatuslo(SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | DWT_INT_TXFRS_BIT_MASK);
-        }
+        send_poll();
 
         /* Execute a delay between ranging exchanges. */
-        Sleep(RNG_DELAY_MS);
+        for(uint32_t tick = 0; tick < NEW_POLL_DLY; tick++) { }
+        
     }
 }
+
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn rx_ok_cb()
+ *
+ * @brief Callback to process RX good frame events
+ *
+ * @param  cb_data  callback data
+ *
+ * @return  none
+ */
+static void rx_ok_cb(const dwt_cb_data_t *cb_data)
+{
+    int i;
+
+    /* A frame has been received, copy it to our local buffer. */
+    if (cb_data->datalength <= FRAME_LEN_MAX)
+    {
+        dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
+    }
+
+    if (frame_is_final_for_me(rx_buffer)) {
+      test_run_info((unsigned char *)"got final");
+      handle_final();
+    }
+    else 
+      test_run_info((unsigned char *)"got sth");
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn rx_to_cb()
+ *
+ * @brief Callback to process RX timeout events
+ *
+ * @param  cb_data  callback data
+ *
+ * @return  none
+ */
+static void rx_to_cb(const dwt_cb_data_t *cb_data)
+{
+    (void)cb_data;
+    /* Set corresponding inter-frame delay. */
+
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn rx_err_cb()
+ *
+ * @brief Callback to process RX error events
+ *
+ * @param  cb_data  callback data
+ *
+ * @return  none
+ */
+static void rx_err_cb(const dwt_cb_data_t *cb_data)
+{
+    (void)cb_data;
+    /* Set corresponding inter-frame delay. */
+
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn tx_conf_cb()
+ *
+ * @brief Callback to process TX confirmation events
+ *
+ * @param  cb_data  callback data
+ *
+ * @return  none
+ */
+static void tx_conf_cb(const dwt_cb_data_t *cb_data)
+{
+    (void)cb_data;
+    test_run_info((unsigned char *)"poll sent");
+    /* This callback has been defined so that a breakpoint can be put here to check it is correctly called but there is actually nothing specific to
+     * do on transmission confirmation in this example. Typically, we could activate reception for the response here but this is automatically handled
+     * by DW IC using DWT_RESPONSE_EXPECTED parameter when calling dwt_starttx().
+     * An actual application that would not need this callback could simply not define it and set the corresponding field to NULL when calling
+     * dwt_setcallbacks(). The ISR will not call it which will allow to save some interrupt processing time. */
+}
+
+
 #endif
 /*****************************************************************************************************************************************************
  * NOTES:
