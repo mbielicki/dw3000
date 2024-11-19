@@ -236,8 +236,6 @@ int ds_twr_responder(void)
  */
 static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 {
-    int i;
-
     /* A frame has been received, copy it to our local buffer. */
     if (cb_data->datalength <= FRAME_LEN_MAX)
     {
@@ -247,9 +245,10 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     if (frame_is_poll(rx_buffer)) {
       handle_poll();
     }
-    else 
+    else {
       test_run_info((unsigned char *)"got sth");
-
+      dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    }
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------

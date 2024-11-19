@@ -59,11 +59,15 @@ static dwt_config_t config = {
 #define RX_ANT_DLY 16385
 
 #define MY_FULL_ADDRESS TAG_ADDRESS, MY_ADDRESS
-#define DST_FULL_ADDRESS ANCHOR_ADDRESS, 0x00
-static uint16_t anchor_address;
+#define ADDR_ANCHOR_1   (ANCHOR_ADDRESS << 8) + 0x13
+#define ADDR_ANCHOR_2   (ANCHOR_ADDRESS << 8) + 0x98
+#define N_ANCHORS       2
+
+static uint16_t anchor_addrs[N_ANCHORS] = { ADDR_ANCHOR_1, ADDR_ANCHOR_2 };
+static int c_anchor;
 
 /* Frames used in the ranging process. See NOTE 2 below. */
-static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DST_FULL_ADDRESS, MY_FULL_ADDRESS, 0x21 };
+static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_FULL_ADDRESS, 0x21 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
@@ -85,7 +89,8 @@ static uint32_t status_reg = 0;
 /* This is the delay from the end of the frame transmission to the enable of the receiver, as programmed for the DW IC's wait for response feature. */
 #define POLL_TX_TO_RESP_RX_DLY_UUS 0//(0 + CPU_PROCESSING_TIME)//(300 + CPU_PROCESSING_TIME)
 
-#define NEW_POLL_DLY 50 * 1000 * 1000
+#define NEW_COORDS_DLY 30 * 1000 * 1000
+#define NEW_ANCHOR_DLY 5 * 1000 * 1000
 
 
 static void rx_ok_cb(const dwt_cb_data_t *cb_data);
@@ -106,6 +111,14 @@ void handle_final() {
     int64_t tof_dtu;
     double tof;
     double distance;
+    uint16_t anchor_addr;
+    
+    anchor_addr = anchor_addrs[c_anchor];
+    
+    if (anchor_addr != get_src_addr(rx_buffer)) {
+      test_run_info((unsigned char *)"final addr ERROR");
+      return;
+     }
 
     /* Retrieve response transmission and final reception timestamps. */
     poll_tx_ts = get_tx_timestamp_u64();
@@ -125,10 +138,10 @@ void handle_final() {
     tof = tof_dtu * DWT_TIME_UNITS;
     distance = tof * SPEED_OF_LIGHT;
     /* Display computed distance on LCD. */
-    anchor_address = get_src_addr(rx_buffer);
     double comm_time_us =  tag_comm_time * DWT_TIME_UNITS * 1000 * 1000;
-    sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f µs", anchor_address, distance, comm_time_us);
+    sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f µs", anchor_addr, distance, comm_time_us);
     test_run_info((unsigned char *)dist_str);
+    
 }
 
 void send_poll() {
@@ -227,10 +240,16 @@ int ds_twr_initiator(void)
     /* Loop forever initiating ranging exchanges. */
     while (1)
     {
-        send_poll();
+        for(c_anchor = 0; c_anchor < N_ANCHORS - 1; c_anchor++) { //N_ANCHORS - 1 ?
+          set_dst_addr(tx_poll_msg, anchor_addrs[c_anchor]);
+
+          send_poll();
+
+          for(uint32_t tick = 0; tick < NEW_ANCHOR_DLY; tick++) { }
+        }
 
         /* Execute a delay between ranging exchanges. */
-        for(uint32_t tick = 0; tick < NEW_POLL_DLY; tick++) { }
+        for(uint32_t tick = 0; tick < NEW_COORDS_DLY; tick++) { }
         
     }
 }

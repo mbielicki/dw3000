@@ -7,7 +7,6 @@ extern "C"
 #endif
 
 #define MY_ADDRESS          0x99
-
 #define TAG_ADDRESS         0x10
 #define ANCHOR_ADDRESS      0x20
 #define ALL_MSG_SRC_ADDR    7

@@ -61,6 +61,7 @@ extern example_ptr example_pointer;
 extern int unit_test_main(void);
 extern void build_examples(void);
 
+static uint8_t i = 0;
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn test_run_info()
  *
@@ -75,7 +76,7 @@ extern void build_examples(void);
  */
 void test_run_info(unsigned char *data)
 {
-    printf("%s\n", data);
+    printf("%x: %s\n",i++ , data);
 }
 
 /*********************************************************************
