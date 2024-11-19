@@ -1,56 +1,3 @@
-/**
- * Copyright (c) 2014 - 2021, Nordic Semiconductor ASA
- *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice, this
- *    list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form, except as embedded into a Nordic
- *    Semiconductor ASA integrated circuit in a product or a software update for
- *    such product, must reproduce the above copyright notice, this list of
- *    conditions and the following disclaimer in the documentation and/or other
- *    materials provided with the distribution.
- *
- * 3. Neither the name of Nordic Semiconductor ASA nor the names of its
- *    contributors may be used to endorse or promote products derived from this
- *    software without specific prior written permission.
- *
- * 4. This software, with or without modification, must only be used with a
- *    Nordic Semiconductor ASA integrated circuit.
- *
- * 5. Any software provided in binary form under this license must not be reverse
- *    engineered, decompiled, modified and/or disassembled.
- *
- * THIS SOFTWARE IS PROVIDED BY NORDIC SEMICONDUCTOR ASA "AS IS" AND ANY EXPRESS
- * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL NORDIC SEMICONDUCTOR ASA OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
- * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- */
-/** @file
- *
- * @defgroup ble_sdk_app_template_main main.c
- * @{
- * @ingroup ble_sdk_app_template
- * @brief Template project main file.
- *
- * This file contains a template for creating a new application. It has the code necessary to wakeup
- * from button, advertise, get a connection restart advertising on disconnect and if no new
- * connection created go back to system-off mode.
- * It can easily be used as a starting point for creating a new application, the comments identified
- * with 'YOUR_JOB' indicates where and how you can customize.
- */
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -83,7 +30,7 @@
 #include "nrf_log_default_backends.h"
 
 
-#define DEVICE_NAME                     "Anchor_98"                       /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "Nordic_Template"                       /**< Name of device. Will be included in the advertising data. */
 #define MANUFACTURER_NAME               "NordicSemiconductor"                   /**< Manufacturer. Will be passed to Device Information Service. */
 #define APP_ADV_INTERVAL                300                                     /**< The advertising interval (in units of 0.625 ms. This value corresponds to 187.5 ms). */
 
@@ -117,6 +64,86 @@ NRF_BLE_QWR_DEF(m_qwr);                                                         
 BLE_ADVERTISING_DEF(m_advertising);                                             /**< Advertising module instance. */
 
 static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID;                        /**< Handle of the current connection. */
+
+#define CUSTOM_SERVICE_UUID_BASE {0x23, 0x15, 0x12, 0xE7, 0xD4, 0x6F, 0x8C, 0xAF, \
+                                  0x85, 0xC1, 0x56, 0x12, 0x00, 0x00, 0x00, 0x00}
+#define CUSTOM_SERVICE_UUID         0x1400
+#define CUSTOM_DISTANCE_CHAR_UUID   0x1401
+
+typedef struct
+{
+    uint16_t                    service_handle;
+    ble_gatts_char_handles_t    distance_char_handles;
+    uint8_t                     uuid_type;
+} ble_custom_service_t;
+
+ble_custom_service_t custom_service;
+
+static uint32_t custom_service_init(ble_custom_service_t * p_service)
+{
+    uint32_t err_code;
+    ble_uuid_t ble_uuid;
+    ble_uuid128_t custom_base_uuid = CUSTOM_SERVICE_UUID_BASE;
+
+    // Add custom base UUID
+    err_code = sd_ble_uuid_vs_add(&custom_base_uuid, &p_service->uuid_type);
+    VERIFY_SUCCESS(err_code);
+
+    ble_uuid.type = p_service->uuid_type;
+    ble_uuid.uuid = CUSTOM_SERVICE_UUID;
+
+    // Add the service
+    err_code = sd_ble_gatts_service_add(BLE_GATTS_SRVC_TYPE_PRIMARY,
+                                        &ble_uuid,
+                                        &p_service->service_handle);
+    VERIFY_SUCCESS(err_code);
+
+    // Add Distance Characteristic
+    ble_gatts_char_md_t char_md = {0};
+    ble_gatts_attr_md_t cccd_md = {0};
+    ble_gatts_attr_t attr_char_value = {0};
+    ble_uuid_t char_uuid;
+    ble_gatts_attr_md_t attr_md = {0};
+
+    char_md.char_props.read = 1; // Readable characteristic
+    char_md.p_cccd_md = NULL;
+
+    char_uuid.type = p_service->uuid_type;
+    char_uuid.uuid = CUSTOM_DISTANCE_CHAR_UUID;
+
+    attr_md.read_perm.sm = 1;
+    attr_md.read_perm.lv = 1;
+    attr_md.vloc = BLE_GATTS_VLOC_STACK;
+    attr_md.vlen = 1;
+
+    uint16_t initial_distance = 0; // Placeholder for the distance value
+    attr_char_value.p_uuid = &char_uuid;
+    attr_char_value.p_attr_md = &attr_md;
+    attr_char_value.init_len = sizeof(uint16_t);
+    attr_char_value.init_offs = 0;
+    attr_char_value.max_len = sizeof(uint16_t);
+    attr_char_value.p_value = (uint8_t *)&initial_distance;
+
+    return sd_ble_gatts_characteristic_add(p_service->service_handle,
+                                           &char_md,
+                                           &attr_char_value,
+                                           &p_service->distance_char_handles);
+}
+uint32_t custom_service_distance_update(ble_custom_service_t * p_service, uint16_t distance)
+{
+    uint16_t len = sizeof(distance);
+
+    ble_gatts_value_t value = {0};
+    value.len = len;
+    value.offset = 0;
+    value.p_value = (uint8_t *)&distance;
+
+    return sd_ble_gatts_value_set(BLE_CONN_HANDLE_INVALID,
+                                  p_service->distance_char_handles.value_handle,
+                                  &value);
+}
+
+
 
 /* YOUR_JOB: Declare all services structure your application is using
  *  BLE_XYZ_DEF(m_xyz);
@@ -287,6 +314,12 @@ static void services_init(void)
 
     err_code = nrf_ble_qwr_init(&m_qwr, &qwr_init);
     APP_ERROR_CHECK(err_code);
+
+    
+    // Initialize the custom service
+    err_code = custom_service_init(&custom_service);
+    APP_ERROR_CHECK(err_code);
+
 
     /* YOUR_JOB: Add code to initialize the services used by the application.
        ble_xxs_init_t                     xxs_init;
@@ -725,6 +758,9 @@ int main(void)
     application_timers_start();
 
     advertising_start(erase_bonds);
+
+    uint16_t distance = 0x0084;
+    custom_service_distance_update(&custom_service, distance);
 
     // Enter main loop.
     for (;;)
