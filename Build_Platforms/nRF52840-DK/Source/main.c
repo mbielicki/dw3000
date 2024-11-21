@@ -79,7 +79,7 @@ void test_run_info(unsigned char *data)
     #ifdef DEBUG_MODE
       printf("%x: %s\n",i++ , data);
     #else
-      printf("%s", data);
+      printf("%s\n", data);
     #endif
 }
 
