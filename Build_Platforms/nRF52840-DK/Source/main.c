@@ -76,7 +76,7 @@ static uint8_t i = 0;
  */
 void test_run_info(unsigned char *data)
 {
-    #ifdef DEBUG
+    #ifdef DEBUG_MODE
       printf("%x: %s\n",i++ , data);
     #else
       printf("%s", data);

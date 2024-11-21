@@ -114,7 +114,7 @@ void handle_final() {
     anchor_addr = anchor_addrs[c_anchor];
     
     if (anchor_addr != get_src_addr(rx_buffer)) {
-      #ifdef DEBUG
+      #ifdef DEBUG_MODE
         test_run_info((unsigned char *)"final addr ERROR");
       #endif
       return;
@@ -276,13 +276,13 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 
     if (frame_is_final_for_me(rx_buffer)) {
     
-      #ifdef DEBUG
+      #ifdef DEBUG_MODE
         test_run_info((unsigned char *)"got final");
       #endif
       handle_final();
     }
     else {
-      #ifdef DEBUG
+      #ifdef DEBUG_MODE
         test_run_info((unsigned char *)"got sth");
       #endif
     }
@@ -332,7 +332,7 @@ static void rx_err_cb(const dwt_cb_data_t *cb_data)
 static void tx_conf_cb(const dwt_cb_data_t *cb_data)
 {
     (void)cb_data;
-    #ifdef DEBUG
+    #ifdef DEBUG_MODE
         test_run_info((unsigned char *)"poll sent");
     #endif
     /* This callback has been defined so that a breakpoint can be put here to check it is correctly called but there is actually nothing specific to
