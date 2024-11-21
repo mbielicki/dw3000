@@ -98,11 +98,9 @@ static void rx_to_cb(const dwt_cb_data_t *cb_data);
 static void rx_err_cb(const dwt_cb_data_t *cb_data);
 static void tx_conf_cb(const dwt_cb_data_t *cb_data);
 
-#define N_ANCHORS 3
-
 static float dist_to_anchor[N_ANCHORS];
 
-
+char json[80];
 void handle_final() {
     uint64_t poll_tx_ts, final_rx_ts;
     uint32_t poll_tx_ts_32, final_rx_ts_32;
@@ -116,7 +114,9 @@ void handle_final() {
     anchor_addr = anchor_addrs[c_anchor];
     
     if (anchor_addr != get_src_addr(rx_buffer)) {
-      test_run_info((unsigned char *)"final addr ERROR");
+      #ifdef DEBUG
+        test_run_info((unsigned char *)"final addr ERROR");
+      #endif
       return;
      }
 
@@ -139,8 +139,8 @@ void handle_final() {
     distance = tof * SPEED_OF_LIGHT;
     /* Display computed distance on LCD. */
     double comm_time_us =  tag_comm_time * DWT_TIME_UNITS * 1000 * 1000;
-    sprintf(dist_str, "%x: DIST: %3.2f m, time: %3.6f µs", anchor_addr, distance, comm_time_us);
-    test_run_info((unsigned char *)dist_str);
+    sprintf(json, "{\"anchor\": \"%x\", \"dist\": \"%3.2f\", \"time\": \"%3.6f\"}", anchor_addr, distance, comm_time_us);
+    test_run_info((unsigned char *)json);
     
 }
 
@@ -240,7 +240,7 @@ int ds_twr_initiator(void)
     /* Loop forever initiating ranging exchanges. */
     while (1)
     {
-        for(c_anchor = 0; c_anchor < N_ANCHORS - 1; c_anchor++) { //N_ANCHORS - 1 ?
+        for(c_anchor = 0; c_anchor < N_ANCHORS; c_anchor++) {
           set_dst_addr(tx_poll_msg, anchor_addrs[c_anchor]);
 
           send_poll();
@@ -275,11 +275,17 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     }
 
     if (frame_is_final_for_me(rx_buffer)) {
-      test_run_info((unsigned char *)"got final");
+    
+      #ifdef DEBUG
+        test_run_info((unsigned char *)"got final");
+      #endif
       handle_final();
     }
-    else 
-      test_run_info((unsigned char *)"got sth");
+    else {
+      #ifdef DEBUG
+        test_run_info((unsigned char *)"got sth");
+      #endif
+    }
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -326,7 +332,9 @@ static void rx_err_cb(const dwt_cb_data_t *cb_data)
 static void tx_conf_cb(const dwt_cb_data_t *cb_data)
 {
     (void)cb_data;
-    test_run_info((unsigned char *)"poll sent");
+    #ifdef DEBUG
+        test_run_info((unsigned char *)"poll sent");
+    #endif
     /* This callback has been defined so that a breakpoint can be put here to check it is correctly called but there is actually nothing specific to
      * do on transmission confirmation in this example. Typically, we could activate reception for the response here but this is automatically handled
      * by DW IC using DWT_RESPONSE_EXPECTED parameter when calling dwt_starttx().
