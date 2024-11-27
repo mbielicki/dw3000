@@ -24,14 +24,14 @@ extern dwt_config_t config_options;
 
 
 
-bool frame_is_poll(uint8_t* rx_buffer) {
+bool frame_is_poll_for_me(uint8_t* rx_buffer) {
   if (rx_buffer[0] != 0x41) return false;
   if (rx_buffer[1] != 0x88) return false;
   if (rx_buffer[3] != 0xCA) return false;
   if (rx_buffer[4] != 0xDE) return false;
   
   if (rx_buffer[5] != ANCHOR_ADDRESS) return false;
-  if (!(rx_buffer[6] == MY_ADDRESS || rx_buffer[6] == 0x00)) return false; // 0x2000 is broadcast
+  if (!(rx_buffer[6] == MY_ADDRESS)) return false;
   
   if (rx_buffer[9] != 0x21) return false;
 
