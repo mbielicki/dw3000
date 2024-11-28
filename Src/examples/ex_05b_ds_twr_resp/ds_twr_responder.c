@@ -242,7 +242,7 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
     }
 
-    if (frame_is_poll(rx_buffer)) {
+    if (frame_is_poll_for_me(rx_buffer)) {
       handle_poll();
     }
     else {

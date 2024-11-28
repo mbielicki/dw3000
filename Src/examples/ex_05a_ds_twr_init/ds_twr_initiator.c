@@ -58,16 +58,19 @@ static dwt_config_t config = {
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
-#define MY_FULL_ADDRESS TAG_ADDRESS, MY_ADDRESS
+#define MY_COMMA_ADDRESS TAG_ADDRESS, MY_ADDRESS
+#define MY_FULL_ADDRESS (ANCHOR_ADDRESS << 8) + MY_ADDRESS
 #define ADDR_ANCHOR_1   (ANCHOR_ADDRESS << 8) + 0x13
 #define ADDR_ANCHOR_2   (ANCHOR_ADDRESS << 8) + 0x98
-#define N_ANCHORS       2
+#define ADDR_ANCHOR_3   (ANCHOR_ADDRESS << 8) + 0x99
+#define ADDR_ANCHOR_4   (ANCHOR_ADDRESS << 8) + 0x35
+#define N_ANCHORS       4
 
-static uint16_t anchor_addrs[N_ANCHORS] = { ADDR_ANCHOR_1, ADDR_ANCHOR_2 };
+static uint16_t anchor_addrs[N_ANCHORS] = { ADDR_ANCHOR_1, ADDR_ANCHOR_2, ADDR_ANCHOR_3, ADDR_ANCHOR_4 };
 static int c_anchor;
 
 /* Frames used in the ranging process. See NOTE 2 below. */
-static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_FULL_ADDRESS, 0x21 };
+static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA_ADDRESS, 0x21 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
@@ -91,6 +94,8 @@ static uint32_t status_reg = 0;
 
 #define NEW_COORDS_DLY 30 * 1000 * 1000
 #define NEW_ANCHOR_DLY 5 * 1000 * 1000
+
+//#define DEBUG_MODE
 
 
 static void rx_ok_cb(const dwt_cb_data_t *cb_data);
@@ -139,8 +144,11 @@ void handle_final() {
     distance = tof * SPEED_OF_LIGHT;
     /* Display computed distance on LCD. */
     double comm_time_us =  tag_comm_time * DWT_TIME_UNITS * 1000 * 1000;
-    sprintf(json, "{\"anchor\": \"%x\", \"dist\": \"%3.2f\", \"time\": \"%3.6f\"}", anchor_addr, distance, comm_time_us);
+    uint16_t distance_cm = distance * 100;
+    sprintf(json, "{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}", MY_FULL_ADDRESS, anchor_addr, distance_cm);
     test_run_info((unsigned char *)json);
+
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
     
 }
 
@@ -159,11 +167,71 @@ void send_poll() {
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
     
     frame_seq_nb++;
+    
+    #ifdef DEBUG_MODE
+      printf("polling %x", tx_poll_msg[6]);
+    #endif
+}
+
+#define POLL_RX_TO_FINAL_TX_DLY_UUS 700
+#define RX_AFTER_FINAL_DLY 700
+
+static uint64_t poll_rx_ts;
+static uint64_t final_tx_ts;
+
+static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA_ADDRESS, 0x23, 0, 0, 0, 0, 0, 0, 0, 0};
+static uint16_t tag_address;
+
+void handle_poll() {
+      uint32_t final_tx_time;
+      int ret;
+
+      /* Retrieve poll transmission and response reception timestamp. */
+      poll_rx_ts = get_rx_timestamp_u64();
+
+      /* Compute final message transmission time. See NOTE 11 below. */
+      final_tx_time = (poll_rx_ts + (POLL_RX_TO_FINAL_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+      dwt_setdelayedtrxtime(final_tx_time);
+
+      dwt_setrxaftertxdelay(RX_AFTER_FINAL_DLY);
+
+      /* Final TX timestamp is the transmission time we programmed plus the TX antenna delay. */
+      final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
+
+      /* Write all timestamps in the final message. See NOTE 12 below. */
+      final_msg_set_ts(&tx_final_msg[FINAL_MSG_POLL_RX_TS_IDX], poll_rx_ts);
+      final_msg_set_ts(&tx_final_msg[FINAL_MSG_FINAL_TX_TS_IDX], final_tx_ts);
+
+      /* Write and send final message. See NOTE 9 below. */
+      tag_address = get_src_addr(rx_buffer);
+      set_dst_addr(tx_final_msg, tag_address);
+      tx_final_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+      dwt_writetxdata(sizeof(tx_final_msg), tx_final_msg, 0); /* Zero offset in TX buffer. */
+      dwt_writetxfctrl(sizeof(tx_final_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging bit set. */
+
+
+      ret = dwt_starttx(DWT_START_TX_DELAYED);
+      /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 13 below. */
+      if (ret == DWT_SUCCESS)
+      {
+          frame_seq_nb++;
+          #ifdef DEBUG_MODE
+           printf("sent final to %x", tag_address);
+          #endif
+      }
+      else {
+        test_run_info((unsigned char *)"final sending ERROR");
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+      }
 }
 
 /* Values for the PG_DELAY and TX_POWER registers reflect the bandwidth and power of the spectrum at the current
  * temperature. These values can be calibrated prior to taking reference measurements. See NOTE 8 below. */
 extern dwt_txconfig_t txconfig_options;
+
+void wait(uint32_t time) {
+  for(uint32_t tick = 0; tick < time; tick++) { }
+}
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn ds_twr_initiator()
@@ -178,6 +246,7 @@ int ds_twr_initiator(void)
 {
     /* Display application name on LCD. */
     test_run_info((unsigned char *)APP_NAME);
+    printf("%x\n", MY_ADDRESS);
 
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
     port_set_dw_ic_spi_fastrate();
@@ -241,16 +310,15 @@ int ds_twr_initiator(void)
     while (1)
     {
         for(c_anchor = 0; c_anchor < N_ANCHORS; c_anchor++) {
-          set_dst_addr(tx_poll_msg, anchor_addrs[c_anchor]);
+          if (anchor_addrs[c_anchor] == MY_FULL_ADDRESS) continue;
 
+          set_dst_addr(tx_poll_msg, anchor_addrs[c_anchor]);
           send_poll();
 
-          for(uint32_t tick = 0; tick < NEW_ANCHOR_DLY; tick++) { }
+          wait(NEW_ANCHOR_DLY);
         }
 
-        /* Execute a delay between ranging exchanges. */
-        for(uint32_t tick = 0; tick < NEW_COORDS_DLY; tick++) { }
-        
+        wait(NEW_COORDS_DLY);
     }
 }
 
@@ -277,14 +345,20 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     if (frame_is_final_for_me(rx_buffer)) {
     
       #ifdef DEBUG_MODE
-        test_run_info((unsigned char *)"got final");
+        printf("got final from %x\n", rx_buffer[8]);
       #endif
       handle_final();
-    }
-    else {
+    } else if (frame_is_poll_for_me(rx_buffer)) {
+    
       #ifdef DEBUG_MODE
-        test_run_info((unsigned char *)"got sth");
+        printf("got poll from %x\n", rx_buffer[8]);
       #endif
+      handle_poll();
+    } else {
+      #ifdef DEBUG_MODE
+        test_run_info((unsigned char *)"got -");
+      #endif
+      dwt_rxenable(DWT_START_RX_IMMEDIATE);
     }
 }
 
@@ -333,7 +407,7 @@ static void tx_conf_cb(const dwt_cb_data_t *cb_data)
 {
     (void)cb_data;
     #ifdef DEBUG_MODE
-        test_run_info((unsigned char *)"poll sent");
+        printf(".\n");
     #endif
     /* This callback has been defined so that a breakpoint can be put here to check it is correctly called but there is actually nothing specific to
      * do on transmission confirmation in this example. Typically, we could activate reception for the response here but this is automatically handled

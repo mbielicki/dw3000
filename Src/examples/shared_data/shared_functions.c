@@ -30,7 +30,7 @@ bool frame_is_poll_for_me(uint8_t* rx_buffer) {
   if (rx_buffer[3] != 0xCA) return false;
   if (rx_buffer[4] != 0xDE) return false;
   
-  if (rx_buffer[5] != ANCHOR_ADDRESS) return false;
+  //if (rx_buffer[5] != ANCHOR_ADDRESS) return false;
   if (!(rx_buffer[6] == MY_ADDRESS)) return false;
   
   if (rx_buffer[9] != 0x21) return false;
@@ -43,7 +43,7 @@ bool frame_is_final_for_me(uint8_t* rx_buffer) {
   if (rx_buffer[3] != 0xCA) return false;
   if (rx_buffer[4] != 0xDE) return false;
   
-  if (rx_buffer[5] != TAG_ADDRESS) return false;
+  //if (rx_buffer[5] != TAG_ADDRESS) return false;
   if (!(rx_buffer[6] == MY_ADDRESS )) return false;
 
   if (rx_buffer[9] != 0x23) return false;
