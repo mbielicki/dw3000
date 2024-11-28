@@ -95,15 +95,61 @@ static uint32_t status_reg = 0;
 #define NEW_COORDS_DLY 30 * 1000 * 1000
 #define NEW_ANCHOR_DLY 5 * 1000 * 1000
 
-//#define DEBUG_MODE
-
-
 static void rx_ok_cb(const dwt_cb_data_t *cb_data);
 static void rx_to_cb(const dwt_cb_data_t *cb_data);
 static void rx_err_cb(const dwt_cb_data_t *cb_data);
 static void tx_conf_cb(const dwt_cb_data_t *cb_data);
 
 static float dist_to_anchor[N_ANCHORS];
+
+void info_msg_set_to_addr(uint8_t *ta_field, uint16_t ta)
+{
+    uint8_t i;
+    for (i = 0; i < 2; i++)
+    {
+        ta_field[i] = (uint8_t)ta;
+        ta >>= 8;
+    }
+}
+void info_msg_set_dist_cm(uint8_t *dc_field, uint16_t dc)
+{
+    uint8_t i;
+    for (i = 0; i < 2; i++)
+    {
+        dc_field[i] = (uint8_t)dc;
+        dc >>= 8;
+    }
+}
+
+static uint8_t tx_info_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA_ADDRESS, 0x25, 0, 0, 0, 0 };
+#define INFO_MSG_TO_ADDR_IDX  10
+#define INFO_MSG_DIST_CM_IDX  12
+#define INFO_TX_TO_RX_DLY_UUS 200
+void send_info(uint16_t to_addr, uint16_t dist_cm) {
+    
+    dwt_forcetrxoff();
+    /* Write frame data to DW IC and prepare transmission. See NOTE 9 below. */
+    tx_info_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+
+    info_msg_set_to_addr(&tx_info_msg[INFO_MSG_TO_ADDR_IDX], to_addr);
+    info_msg_set_dist_cm(&tx_info_msg[INFO_MSG_DIST_CM_IDX], dist_cm);
+
+
+    dwt_writetxdata(sizeof(tx_info_msg), tx_info_msg, 0);  /* Zero offset in TX buffer. */
+    dwt_writetxfctrl(sizeof(tx_info_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging. */
+
+    dwt_setrxaftertxdelay(INFO_TX_TO_RX_DLY_UUS);
+    dwt_setpreambledetecttimeout(0);
+    dwt_setrxtimeout(0);
+
+    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    
+    frame_seq_nb++;
+    
+    #ifdef DEBUG_MODE
+      printf("info sent");
+    #endif
+}
 
 char json[80];
 void handle_final() {
@@ -148,8 +194,9 @@ void handle_final() {
     sprintf(json, "{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}", MY_FULL_ADDRESS, anchor_addr, distance_cm);
     test_run_info((unsigned char *)json);
 
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
-    
+
+    send_info(anchor_addr, distance_cm);
+
 }
 
 void send_poll() {

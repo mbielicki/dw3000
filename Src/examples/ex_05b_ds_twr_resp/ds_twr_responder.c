@@ -31,7 +31,7 @@
 extern void test_run_info(unsigned char *data);
 
 /* Example application name */
-#define APP_NAME "DS TWR RESP v1.0"
+#define APP_NAME "INFO RECEIVER"
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -50,24 +50,23 @@ static dwt_config_t config = {
     DWT_PDOA_M0       /* PDOA mode off */
 };
 
-/* Inter-ranging delay period, in milliseconds. */
-#define RNG_DELAY_MS 100//1000
-
 /* Default antenna delay values for 64 MHz PRF. See NOTE 1 below. */
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
-#define MY_FULL_ADDRESS ANCHOR_ADDRESS, MY_ADDRESS
+#define MY_COMMA_ADDRESS ANCHOR_ADDRESS, 0xff
+#define MY_FULL_ADDRESS (ANCHOR_ADDRESS << 8) + 0xff
 static uint16_t tag_address;
 
 /* Frames used in the ranging process. See NOTE 2 below. */
-static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_FULL_ADDRESS, 0x23, 0, 0, 0, 0, 0, 0, 0, 0};
+static uint8_t rx_info_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, MY_COMMA_ADDRESS, 0x00, 0x00, 0x25, 0, 0, 0, 0};
 /* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Index to access some of the fields in the frames involved in the process. */
-#define ALL_MSG_SN_IDX            2
-#define FINAL_MSG_POLL_RX_TS_IDX  10
-#define FINAL_MSG_FINAL_TX_TS_IDX 14
+#define ALL_MSG_SN_IDX        2
+#define INFO_MSG_TO_ADDR_IDX  10
+#define INFO_MSG_DIST_CM_IDX  12
+
 
 /* Frame sequence number, incremented after each transmission. */
 static uint8_t frame_seq_nb = 0;
@@ -80,67 +79,49 @@ static uint8_t rx_buffer[RX_BUF_LEN];
 /* Hold copy of status register state here for reference so that it can be examined at a debug breakpoint. */
 static uint32_t status_reg = 0;
 
-#define POLL_RX_TO_FINAL_TX_DLY_UUS 700 //700
-#define RX_AFTER_FINAL_DLY 700
-
-/* Timestamps of frames transmission/reception. */
-static uint64_t poll_rx_ts;
-static uint64_t final_tx_ts;
-
 
 /* Values for the PG_DELAY and TX_POWER registers reflect the bandwidth and power of the spectrum at the current
  * temperature. These values can be calibrated prior to taking reference measurements. See NOTE 2 below. */
 extern dwt_txconfig_t txconfig_options;
-
 
 static void rx_ok_cb(const dwt_cb_data_t *cb_data);
 static void rx_to_cb(const dwt_cb_data_t *cb_data);
 static void rx_err_cb(const dwt_cb_data_t *cb_data);
 static void tx_conf_cb(const dwt_cb_data_t *cb_data);
 
-uint16_t frame_len;
+uint16_t info_msg_get_to_addr(uint8_t *ta_field)
+{
+    uint8_t i;
+    uint16_t ta = 0;
+    for (i = 0; i < 2; i++)
+    {
+        ta += ((uint16_t)ta_field[i] << (i * 8));
+    }
 
+    return ta;
+}
+uint16_t info_msg_get_dist_cm(uint8_t *dc_field)
+{
+    uint8_t i;
+    uint16_t dc = 0;
+    for (i = 0; i < 2; i++)
+    {
+        dc += ((uint16_t)dc_field[i] << (i * 8));
+    }
 
-void handle_poll() {
-      uint32_t final_tx_time;
-      int ret;
+    return dc;
+}
 
-      /* Retrieve poll transmission and response reception timestamp. */
-      test_run_info((unsigned char *)"got poll");
-    
-      poll_rx_ts = get_rx_timestamp_u64();
+void handle_info() {
+      uint16_t from_addr;
+      uint16_t to_addr;
+      uint16_t dist_cm;
 
-      /* Compute final message transmission time. See NOTE 11 below. */
-      final_tx_time = (poll_rx_ts + (POLL_RX_TO_FINAL_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
-      dwt_setdelayedtrxtime(final_tx_time);
+      from_addr = get_src_addr(rx_buffer);
+      to_addr = info_msg_get_to_addr(&rx_buffer[INFO_MSG_TO_ADDR_IDX]);
+      dist_cm = info_msg_get_dist_cm(&rx_buffer[INFO_MSG_DIST_CM_IDX]);
 
-      dwt_setrxaftertxdelay(RX_AFTER_FINAL_DLY);
-
-      /* Final TX timestamp is the transmission time we programmed plus the TX antenna delay. */
-      final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
-
-      /* Write all timestamps in the final message. See NOTE 12 below. */
-      final_msg_set_ts(&tx_final_msg[FINAL_MSG_POLL_RX_TS_IDX], poll_rx_ts);
-      final_msg_set_ts(&tx_final_msg[FINAL_MSG_FINAL_TX_TS_IDX], final_tx_ts);
-
-      /* Write and send final message. See NOTE 9 below. */
-      tag_address = get_src_addr(rx_buffer);
-      set_dst_addr(tx_final_msg, tag_address);
-      tx_final_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
-      dwt_writetxdata(sizeof(tx_final_msg), tx_final_msg, 0); /* Zero offset in TX buffer. */
-      dwt_writetxfctrl(sizeof(tx_final_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging bit set. */
-
-
-      ret = dwt_starttx(DWT_START_TX_DELAYED);
-      /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 13 below. */
-      if (ret == DWT_SUCCESS)
-      {
-          frame_seq_nb++;
-      }
-      else {
-        test_run_info((unsigned char *)"final sending ERROR");
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
-      }
+      printf("{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}\n", from_addr, to_addr, dist_cm);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -224,7 +205,16 @@ int ds_twr_responder(void)
 
 }
 
+bool frame_is_info(uint8_t* rx_buffer) {
+  if (rx_buffer[0] != 0x41) return false;
+  if (rx_buffer[1] != 0x88) return false;
+  if (rx_buffer[3] != 0xCA) return false;
+  if (rx_buffer[4] != 0xDE) return false;
 
+  if (rx_buffer[9] != 0x25) return false;
+
+  return true;
+}
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn rx_ok_cb()
  *
@@ -242,13 +232,16 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
     }
 
-    if (frame_is_poll_for_me(rx_buffer)) {
-      handle_poll();
+    if (frame_is_info(rx_buffer)) {
+      handle_info();
     }
     else {
-      test_run_info((unsigned char *)"got sth");
-      dwt_rxenable(DWT_START_RX_IMMEDIATE);
+      #ifdef DEBUG_MODE
+        test_run_info((unsigned char *)"got sth");
+      #endif
     }
+    
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -299,16 +292,6 @@ static void rx_err_cb(const dwt_cb_data_t *cb_data)
 static void tx_conf_cb(const dwt_cb_data_t *cb_data)
 {
     (void)cb_data;
-    
-    test_run_info((unsigned char *)"final sent");
-    /* This callback has been defined so that a breakpoint can be put here to check it is correctly called but there is actually nothing specific to
-     * do on transmission confirmation in this example. Typically, we could activate reception for the response here but this is automatically handled
-     * by DW IC using DWT_RESPONSE_EXPECTED parameter when calling dwt_starttx().
-     * An actual application that would not need this callback could simply not define it and set the corresponding field to NULL when calling
-     * dwt_setcallbacks(). The ISR will not call it which will allow to save some interrupt processing time. */
-
-    /* TESTING BREAKPOINT LOCATION #4 */
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
 

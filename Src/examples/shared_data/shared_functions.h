@@ -6,6 +6,7 @@ extern "C"
 {
 #endif
 
+//#define DEBUG_MODE
 #define DOES_POLL
 #define MY_ADDRESS          0x98
 
