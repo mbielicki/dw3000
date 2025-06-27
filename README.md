@@ -13,8 +13,9 @@ The system operation:
 3. The node receives the final message and records the time _final_rx_.
 4. The node calculates the distance to the other device:
 
-$$d=\frac{((final_rx-poll_tx\ )-(final_tx-poll_rx\ ))}{2}\ \cdot\ c$$
-c – speed of light
+$$d=\frac{((final_rx-poll_tx\ )-(final_tx-poll_rx\ ))}{2}\ \cdot\ c$$,
+
+c – speed of light.
 
 5. The node sends an “info” message to the receiver. The message contains: the source node address, the address of the device, distance to which was measured, and the distance between the devices.
 6. The receiver outputs this data using Real Time Transfer in the following format:
