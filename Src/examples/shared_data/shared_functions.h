@@ -16,6 +16,7 @@ extern "C"
 #define ALL_MSG_DST_ADDR    5
 
 bool frame_is_poll_for_me(uint8_t* rx_buffer);
+bool frame_is_resp_for_me(uint8_t* rx_buffer);
 bool frame_is_final_for_me(uint8_t* rx_buffer);
 uint16_t get_src_addr(uint8_t* msg);
 uint16_t get_dst_addr(uint8_t* msg);

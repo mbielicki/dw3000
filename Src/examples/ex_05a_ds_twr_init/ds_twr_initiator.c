@@ -75,8 +75,9 @@ static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
 #define ALL_MSG_SN_IDX            2
-#define FINAL_MSG_POLL_RX_TS_IDX  10
-#define FINAL_MSG_FINAL_TX_TS_IDX 14
+#define FINAL_MSG_POLL_TX_TS_IDX  10
+#define FINAL_MSG_RESP_RX_TS_IDX  14
+#define FINAL_MSG_FINAL_TX_TS_IDX 18
 /* Frame sequence number, incremented after each transmission. */
 static uint8_t frame_seq_nb = 0;
 
@@ -151,51 +152,50 @@ void send_info(uint16_t to_addr, uint16_t dist_cm) {
     #endif
 }
 
+uint32_t poll_rx_ts_32;
 char json[80];
 void handle_final() {
-    uint64_t poll_tx_ts, final_rx_ts;
-    uint32_t poll_tx_ts_32, final_rx_ts_32;
-    uint32_t poll_rx_ts, final_tx_ts;
+    uint64_t resp_tx_ts, final_rx_ts;
+    uint32_t resp_tx_ts_32, final_rx_ts_32;
+
+    uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
     double tag_comm_time, anchor_comm_time;
     int64_t tof_dtu;
     double tof;
     double distance;
-    uint16_t anchor_addr;
+    uint16_t src_addr;
     
-    anchor_addr = anchor_addrs[c_anchor];
-    
-    if (anchor_addr != get_src_addr(rx_buffer)) {
-      #ifdef DEBUG_MODE
-        test_run_info((unsigned char *)"final addr ERROR");
-      #endif
-      return;
-     }
-
-    /* Retrieve response transmission and final reception timestamps. */
-    poll_tx_ts = get_tx_timestamp_u64();
-    final_rx_ts = get_rx_timestamp_u64();
+    src_addr = get_src_addr(rx_buffer);
 
     /* Get timestamps embedded in the final message. */
-    final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_RX_TS_IDX], &poll_rx_ts);
+    final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
+    final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
     final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
 
+    /* Retrieve response transmission and final reception timestamps. */
+    resp_tx_ts = get_tx_timestamp_u64();
+    final_rx_ts = get_rx_timestamp_u64();
+
     /* Compute time of flight. 32-bit subtractions give correct answers even if clock has wrapped. See NOTE 12 below. */
-    poll_tx_ts_32 = (uint32_t)poll_tx_ts;
+    resp_tx_ts_32 = (uint32_t)resp_tx_ts;
     final_rx_ts_32 = (uint32_t)final_rx_ts;
-    tag_comm_time = (double)(final_rx_ts_32 - poll_tx_ts_32);
-    anchor_comm_time = (double)(final_tx_ts - poll_rx_ts);
-    tof_dtu = (int64_t)((tag_comm_time - anchor_comm_time) / 2);
+
+    Ra = (double)(resp_rx_ts - poll_tx_ts);
+    Rb = (double)(final_rx_ts_32 - resp_tx_ts_32);
+    Da = (double)(final_tx_ts - resp_rx_ts);
+    Db = (double)(resp_tx_ts_32 - poll_rx_ts_32);
+    tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
 
     tof = tof_dtu * DWT_TIME_UNITS;
     distance = tof * SPEED_OF_LIGHT;
-    /* Display computed distance on LCD. */
-    double comm_time_us =  tag_comm_time * DWT_TIME_UNITS * 1000 * 1000;
+
+    /* Display computed distance */
     uint16_t distance_cm = distance * 100;
-    sprintf(json, "{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}", MY_FULL_ADDRESS, anchor_addr, distance_cm);
+    sprintf(json, "{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}", MY_FULL_ADDRESS, src_addr, distance_cm);
     test_run_info((unsigned char *)json);
 
 
-    send_info(anchor_addr, distance_cm);
+    send_info(src_addr, distance_cm);
 
 }
 
@@ -203,6 +203,7 @@ void send_poll() {
 
     dwt_forcetrxoff();
     /* Write frame data to DW IC and prepare transmission. See NOTE 9 below. */
+    frame_seq_nb = 0;
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
     dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);  /* Zero offset in TX buffer. */
     dwt_writetxfctrl(sizeof(tx_poll_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging. */
@@ -220,21 +221,70 @@ void send_poll() {
     #endif
 }
 
-#define POLL_RX_TO_FINAL_TX_DLY_UUS 700
-#define RX_AFTER_FINAL_DLY 700
-
+#define POLL_RX_TO_RESP_TX_DLY_UUS 700
+#define RX_AFTER_RESP_DLY 700
 static uint64_t poll_rx_ts;
-static uint64_t final_tx_ts;
+static uint64_t resp_tx_ts;
+static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA_ADDRESS, 0x10, 0x02, 0, 0, 0, 0 };
 
-static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA_ADDRESS, 0x23, 0, 0, 0, 0, 0, 0, 0, 0};
 static uint16_t tag_address;
 
 void handle_poll() {
+      uint32_t resp_tx_time;
+      int ret;
+
+      /* Retrieve poll transmission timestamp. */
+      poll_rx_ts = get_rx_timestamp_u64();
+      poll_rx_ts_32 = (uint32_t)poll_rx_ts; // save global poll_rx
+
+      /* Compute resp message transmission time. See NOTE 11 below. */
+      resp_tx_time = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+      dwt_setdelayedtrxtime(resp_tx_time);
+
+      dwt_setrxaftertxdelay(RX_AFTER_RESP_DLY);
+
+      /* Resp TX timestamp is the transmission time we programmed plus the TX antenna delay. */
+      resp_tx_ts = (((uint64_t)(resp_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
+
+      /* Write and send resp message. See NOTE 9 below. */
+      tag_address = get_src_addr(rx_buffer);
+      set_dst_addr(tx_resp_msg, tag_address);
+      tx_resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+      dwt_writetxdata(sizeof(tx_resp_msg), tx_resp_msg, 0); /* Zero offset in TX buffer. */
+      dwt_writetxfctrl(sizeof(tx_resp_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging bit set. */
+
+
+      ret = dwt_starttx(DWT_START_TX_DELAYED);
+      /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 13 below. */
+      if (ret == DWT_SUCCESS)
+      {
+          frame_seq_nb++;
+          #ifdef DEBUG_MODE
+           printf("sent resp to %x", tag_address);
+          #endif
+      }
+      else {
+        test_run_info((unsigned char *)"resp sending ERROR");
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+      }
+}
+
+#define POLL_RX_TO_FINAL_TX_DLY_UUS 700
+#define RX_AFTER_FINAL_DLY 700
+
+static uint64_t resp_rx_ts;
+static uint64_t final_tx_ts;
+static uint64_t poll_tx_ts;
+
+static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA_ADDRESS, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+void handle_resp() {
       uint32_t final_tx_time;
       int ret;
 
       /* Retrieve poll transmission and response reception timestamp. */
-      poll_rx_ts = get_rx_timestamp_u64();
+      resp_rx_ts = get_rx_timestamp_u64();
+      poll_tx_ts = get_tx_timestamp_u64();
 
       /* Compute final message transmission time. See NOTE 11 below. */
       final_tx_time = (poll_rx_ts + (POLL_RX_TO_FINAL_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
@@ -246,7 +296,8 @@ void handle_poll() {
       final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
 
       /* Write all timestamps in the final message. See NOTE 12 below. */
-      final_msg_set_ts(&tx_final_msg[FINAL_MSG_POLL_RX_TS_IDX], poll_rx_ts);
+      final_msg_set_ts(&tx_final_msg[FINAL_MSG_POLL_TX_TS_IDX], poll_tx_ts);
+      final_msg_set_ts(&tx_final_msg[FINAL_MSG_RESP_RX_TS_IDX], resp_rx_ts);
       final_msg_set_ts(&tx_final_msg[FINAL_MSG_FINAL_TX_TS_IDX], final_tx_ts);
 
       /* Write and send final message. See NOTE 9 below. */
@@ -270,6 +321,7 @@ void handle_poll() {
         test_run_info((unsigned char *)"final sending ERROR");
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
       }
+
 }
 
 /* Values for the PG_DELAY and TX_POWER registers reflect the bandwidth and power of the spectrum at the current
@@ -403,6 +455,12 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
         printf("got final from %x\n", rx_buffer[8]);
       #endif
       handle_final();
+    } else if (frame_is_resp_for_me(rx_buffer)) {
+    
+      #ifdef DEBUG_MODE
+        printf("got resp from %x\n", rx_buffer[8]);
+      #endif
+      handle_resp();
     } else if (frame_is_poll_for_me(rx_buffer)) {
     
       #ifdef DEBUG_MODE
