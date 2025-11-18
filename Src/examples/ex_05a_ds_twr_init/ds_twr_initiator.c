@@ -353,6 +353,9 @@ int ds_twr_initiator(void)
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
     // dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
 
+
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
     #ifndef DOES_POLL
 
     while (1) {}

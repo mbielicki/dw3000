@@ -6,9 +6,9 @@ extern "C"
 {
 #endif
 
-//#define DEBUG_MODE
-#define DOES_POLL
-#define MY_ADDRESS          0x98
+#define DEBUG_MODE
+//#define DOES_POLL
+#define MY_ADDRESS          0x52
 
 #define TAG_ADDRESS         0x00
 #define ANCHOR_ADDRESS      0x00
