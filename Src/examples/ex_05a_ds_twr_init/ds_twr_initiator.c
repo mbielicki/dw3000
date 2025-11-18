@@ -60,10 +60,10 @@ static dwt_config_t config = {
 
 #define MY_COMMA_ADDRESS TAG_ADDRESS, MY_ADDRESS
 #define MY_FULL_ADDRESS (ANCHOR_ADDRESS << 8) + MY_ADDRESS
-#define ADDR_ANCHOR_1   (ANCHOR_ADDRESS << 8) + 0x13
-#define ADDR_ANCHOR_2   (ANCHOR_ADDRESS << 8) + 0x98
-#define ADDR_ANCHOR_3   (ANCHOR_ADDRESS << 8) + 0x99
-#define ADDR_ANCHOR_4   (ANCHOR_ADDRESS << 8) + 0x35
+#define ADDR_ANCHOR_1   (ANCHOR_ADDRESS << 8) + 0x52
+#define ADDR_ANCHOR_2   (ANCHOR_ADDRESS << 8) + 0x39
+#define ADDR_ANCHOR_3   (ANCHOR_ADDRESS << 8) + 0x13
+#define ADDR_ANCHOR_4   (ANCHOR_ADDRESS << 8) + 0x12
 #define N_ANCHORS       4
 
 static uint16_t anchor_addrs[N_ANCHORS] = { ADDR_ANCHOR_1, ADDR_ANCHOR_2, ADDR_ANCHOR_3, ADDR_ANCHOR_4 };
@@ -164,6 +164,7 @@ void handle_final() {
     double tof;
     double distance;
     uint16_t src_addr;
+    double Ra, Rb, Da, Db;
     
     src_addr = get_src_addr(rx_buffer);
 
