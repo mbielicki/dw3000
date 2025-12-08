@@ -8,7 +8,7 @@ extern "C"
 
 #define DEBUG_MODE
 #define DOES_POLL
-#define MY_ADDRESS          0x94
+#define MY_ADDRESS          0x08
 
 
 #define ALL_MSG_SRC_ADDR    7

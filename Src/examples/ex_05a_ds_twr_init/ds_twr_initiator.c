@@ -62,7 +62,7 @@ static dwt_config_t config = {
 #define MY_FULL_ADDRESS (0x0000 | MY_ADDRESS)
 #define N_ANCHORS       6
 
-static uint16_t anchor_addrs[N_ANCHORS] = { 0x0008, 0x0069, 0x0098, 0x0094, 0x0032, 0x0099 };
+static uint16_t anchor_addrs[N_ANCHORS] = { 0x0008, 0x0069, 0x0098, 0x0094, 0x0035, 0x0099 };
 static int c_anchor;
 
 /* Frames used in the ranging process. See NOTE 2 below. */
