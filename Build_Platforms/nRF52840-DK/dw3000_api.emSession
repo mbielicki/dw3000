@@ -2,10 +2,7 @@
 <session>
  <Bookmarks/>
  <Breakpoints groups="Breakpoints" active_group="Breakpoints">
-  <BreakpointListItem trigger="" line="448" counter="0" hardwareBreakpoint="" isFunctionBreakpoint="false" action="" expression="" group="Breakpoints" type="Breakpoint" state="2" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useHWbreakpoint="false"/>
-  <BreakpointListItem trigger="" line="489" counter="0" hardwareBreakpoint="" isFunctionBreakpoint="false" action="" expression="" group="Breakpoints" type="Breakpoint" state="2" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useHWbreakpoint="false"/>
-  <BreakpointListItem trigger="" line="505" counter="0" hardwareBreakpoint="" isFunctionBreakpoint="false" action="" expression="" group="Breakpoints" type="Breakpoint" state="2" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useHWbreakpoint="false"/>
-  <BreakpointListItem trigger="" line="265" counter="0" hardwareBreakpoint="" isFunctionBreakpoint="false" action="" expression="" group="Breakpoints" type="Breakpoint" state="4" filename="../../Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" useHWbreakpoint="false"/>
+  <BreakpointListItem trigger="" line="519" counter="0" hardwareBreakpoint="" isFunctionBreakpoint="false" action="" expression="" group="Breakpoints" type="Breakpoint" state="4" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useHWbreakpoint="false"/>
   <BreakpointListItem trigger="" line="283" counter="0" hardwareBreakpoint="" isFunctionBreakpoint="false" action="" expression="" group="Breakpoints" type="Breakpoint" state="4" filename="../../Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" useHWbreakpoint="false"/>
   <Exceptions set="MemManage;UsageFault_Coprocessor;UsageFault_CheckingError;UsageFault_StateError;BusFault;ExceptionEntryReturnFault;HardFault"/>
  </Breakpoints>
@@ -14,7 +11,7 @@
   <FrameBufferWindow bufferHeight="-1" addressSpace="" addressText="" bufferWidth="-1"/>
  </FrameBufferWindow>
  <Memory1>
-  <MemoryWindow addressSpace="" dataSize="1" autoEvaluate="0" viewMode="0" addressOrder="0" columnsText="" refreshPeriod="0" name="dw3000_api" radix="16" sizeText="1" addressText="0x20000714"/>
+  <MemoryWindow addressSpace="" dataSize="1" autoEvaluate="0" viewMode="0" addressOrder="0" columnsText="" refreshPeriod="0" name="dw3000_api" radix="16" sizeText="4" addressText="0x20000738"/>
  </Memory1>
  <Memory2>
   <MemoryWindow addressSpace="" dataSize="1" autoEvaluate="0" viewMode="0" addressOrder="0" columnsText="" refreshPeriod="0" name="dw3000_api" radix="16" sizeText="" addressText=""/>
@@ -57,7 +54,12 @@
  </TraceWindow>
  <Watch1>
   <Watches active="1" update="Never">
-   <Watchpoint expression="rx_buffer" name="rx_buffer" radix="-1" linenumber="465" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c"/>
+   <Watchpoint expression="rx_buffer" name="rx_buffer" radix="-1" linenumber="485" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c"/>
+   <Watchpoint expression="resp_rx_ts" name="resp_rx_ts" radix="16" linenumber="191" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c"/>
+   <Watchpoint expression="poll_tx_ts" name="poll_tx_ts" radix="-1" linenumber="191" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c"/>
+   <Watchpoint expression="resp_tx_ts_32" name="resp_tx_ts_32" radix="-1" linenumber="192" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c"/>
+   <Watchpoint expression="poll_rx_ts_32" name="poll_rx_ts_32" radix="-1" linenumber="194" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c"/>
+   <Watchpoint expression="final_rx_ts_32" name="final_rx_ts_32" radix="-1" linenumber="192" filename="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c"/>
   </Watches>
  </Watch1>
  <Watch2>
@@ -70,12 +72,12 @@
   <Watches active="0" update="Never"/>
  </Watch4>
  <Files>
-  <SessionOpenFile windowGroup="DockEditLeft" x="2" y="9" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useBinaryEdit="0" left="0" path="../../Src/examples/shared_data/shared_functions.h" selected="0" top="0" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="493" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" selected="1" top="425" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="55" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useBinaryEdit="0" left="0" path="../../Src/example_selection.h" selected="0" top="21" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="591" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useBinaryEdit="0" left="0" path="../../Src/examples/shared_data/shared_functions.c" selected="0" top="0" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="121" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" selected="0" top="27" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="93" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="Source/main.c" selected="0" top="90" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="2" y="8" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useBinaryEdit="0" left="0" path="../../Src/examples/shared_data/shared_functions.h" selected="0" top="0" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="18" y="57" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" selected="1" top="78" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="56" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/ex_05a_ds_twr_init/ds_twr_initiator.c" useBinaryEdit="0" left="0" path="../../Src/example_selection.h" selected="0" top="50" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="52" useTextEdit="1" openedFrom="C:/capstone/dw-api/Src/examples/shared_data/shared_functions.h" useBinaryEdit="0" left="0" path="../../Src/examples/shared_data/shared_functions.c" selected="0" top="46" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="203" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../Src/examples/ex_05b_ds_twr_resp/ds_twr_responder.c" selected="0" top="226" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="93" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="Source/main.c" selected="0" top="16" codecName="Default"/>
  </Files>
  <ARMCrossStudioWindow activeProject="dw3000_api" fileDialogDefaultFilter="*.c" autoConnectTarget="J-Link" buildConfiguration="Release" sessionSettings="" debugSearchFileMap="" fileDialogInitialDirectory="" debugSearchPath="" autoConnectCapabilities="3711"/>
 </session>

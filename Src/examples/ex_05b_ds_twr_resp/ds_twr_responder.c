@@ -54,8 +54,8 @@ static dwt_config_t config = {
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
-#define MY_COMMA_ADDRESS ANCHOR_ADDRESS, 0xff
-#define MY_FULL_ADDRESS (ANCHOR_ADDRESS << 8) + 0xff
+#define MY_COMMA_ADDRESS 0x00, 0xff
+#define MY_FULL_ADDRESS 0x00ff
 static uint16_t tag_address;
 
 /* Frames used in the ranging process. See NOTE 2 below. */

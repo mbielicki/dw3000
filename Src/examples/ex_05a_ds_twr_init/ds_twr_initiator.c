@@ -58,15 +58,11 @@ static dwt_config_t config = {
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
-#define MY_COMMA_ADDRESS TAG_ADDRESS, MY_ADDRESS
-#define MY_FULL_ADDRESS (ANCHOR_ADDRESS << 8) + MY_ADDRESS
-#define ADDR_ANCHOR_1   (ANCHOR_ADDRESS << 8) + 0x69
-#define ADDR_ANCHOR_2   (ANCHOR_ADDRESS << 8) + 0x39
-#define ADDR_ANCHOR_3   (ANCHOR_ADDRESS << 8) + 0x13
-#define ADDR_ANCHOR_4   (ANCHOR_ADDRESS << 8) + 0x12
-#define N_ANCHORS       4
+#define MY_COMMA_ADDRESS 0x00, MY_ADDRESS
+#define MY_FULL_ADDRESS 0x0094
+#define N_ANCHORS       6
 
-static uint16_t anchor_addrs[N_ANCHORS] = { ADDR_ANCHOR_1, ADDR_ANCHOR_2, ADDR_ANCHOR_3, ADDR_ANCHOR_4 };
+static uint16_t anchor_addrs[N_ANCHORS] = { 0x0008, 0x0069, 0x0098, 0x0094, 0x0032, 0x0099 };
 static int c_anchor;
 
 /* Frames used in the ranging process. See NOTE 2 below. */

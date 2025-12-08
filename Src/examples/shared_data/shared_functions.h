@@ -7,11 +7,10 @@ extern "C"
 #endif
 
 #define DEBUG_MODE
-//#define DOES_POLL
-#define MY_ADDRESS          0x52
+#define DOES_POLL
+#define MY_ADDRESS          0x94
 
-#define TAG_ADDRESS         0x00
-#define ANCHOR_ADDRESS      0x00
+
 #define ALL_MSG_SRC_ADDR    7
 #define ALL_MSG_DST_ADDR    5
 
