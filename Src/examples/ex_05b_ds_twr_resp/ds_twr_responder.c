@@ -30,40 +30,53 @@
 
 extern void test_run_info(unsigned char *data);
 
+/* TDMA master configuration */
+#define MASTER_ADDR          0x0072
+#define NUM_SLAVES           3
+static const uint16_t slave_addresses[NUM_SLAVES] = { 0x0099, 0x0098, 0x0008 };
+#define SUPERFRAME_PERIOD_MS 400
+#define SLOT_DURATION_MS     150
+#define SYNC_SLOT_MS         5
+
+#define FUNC_CODE_SYNC       0xAA
+#define FUNC_CODE_TOKEN      0xBB
+
+/* Frames used in the TDMA scheduling. */
+// SYNC message: broadcast to all slaves
+static uint8_t sync_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0xFF, 0xFF, 0, 0, FUNC_CODE_SYNC };
+// TOKEN message: addressed to a specific slave
+static uint8_t token_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0, 0, 0, 0, FUNC_CODE_TOKEN };
+
+#define SRC_ADDR_IDX  7
+#define DST_ADDR_IDX  5
+#define SEQ_NUM_IDX   2
+
+static volatile bool tx_done = false;
+
 /* Example application name */
-#define APP_NAME "INFO RECEIVER"
+#define APP_NAME "TDMA MASTER"
 
 /* Default communication configuration. We use default non-STS DW mode. */
-static dwt_config_t config = {
-    5,                /* Channel number. */
-    DWT_PLEN_128,     /* Preamble length. Used in TX only. */
-    DWT_PAC8,         /* Preamble acquisition chunk size. Used in RX only. */
-    9,                /* TX preamble code. Used in TX only. */
-    9,                /* RX preamble code. Used in RX only. */
-    1,                /* 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type */
-    DWT_BR_6M8,       /* Data rate. */
-    DWT_PHRMODE_STD,  /* PHY header mode. */
-    DWT_PHRRATE_STD,  /* PHY header rate. */
-    (129 + 8 - 8),    /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
-    DWT_STS_MODE_OFF, /* STS disabled */
-    DWT_STS_LEN_64,   /* STS length see allowed values in Enum dwt_sts_lengths_e */
-    DWT_PDOA_M0       /* PDOA mode off */
+static dwt_config_t config = { 5,                /* Channel number. */
+                               DWT_PLEN_128,     /* Preamble length. Used in TX only. */
+                               DWT_PAC8,         /* Preamble acquisition chunk size. Used in RX only. */
+                               9,                /* TX preamble code. Used in TX only. */
+                               9,                /* RX preamble code. Used in RX only. */
+                               1,                /* 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type */
+                               DWT_BR_6M8,       /* Data rate. */
+                               DWT_PHRMODE_STD,  /* PHY header mode. */
+                               DWT_PHRRATE_STD,  /* PHY header rate. */
+                               (129 + 8 - 8),    /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+                               DWT_STS_MODE_OFF, /* STS disabled */
+                               DWT_STS_LEN_64,   /* STS length see allowed values in Enum dwt_sts_lengths_e */
+                               DWT_PDOA_M0       /* PDOA mode off */
 };
 
 /* Default antenna delay values for 64 MHz PRF. See NOTE 1 below. */
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
-#define MY_COMMA_ADDRESS 0x00, 0xff
-#define MY_FULL_ADDRESS 0x00ff
-static uint16_t tag_address;
-
-/* Frames used in the ranging process. See NOTE 2 below. */
-static uint8_t rx_info_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, MY_COMMA_ADDRESS, 0x00, 0x00, 0x25, 0, 0, 0, 0};
-/* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
-#define ALL_MSG_COMMON_LEN 10
 /* Index to access some of the fields in the frames involved in the process. */
-#define ALL_MSG_SN_IDX        2
 #define INFO_MSG_TO_ADDR_IDX  10
 #define INFO_MSG_DIST_CM_IDX  12
 
@@ -112,16 +125,39 @@ uint16_t info_msg_get_dist_cm(uint8_t *dc_field)
     return dc;
 }
 
-void handle_info() {
-      uint16_t from_addr;
-      uint16_t to_addr;
-      uint16_t dist_cm;
+void handle_info()
+{
+    uint16_t from_addr;
+    uint16_t to_addr;
+    uint16_t dist_cm;
 
-      from_addr = get_src_addr(rx_buffer);
-      to_addr = info_msg_get_to_addr(&rx_buffer[INFO_MSG_TO_ADDR_IDX]);
-      dist_cm = info_msg_get_dist_cm(&rx_buffer[INFO_MSG_DIST_CM_IDX]);
+    from_addr = get_src_addr(rx_buffer);
+    to_addr = info_msg_get_to_addr(&rx_buffer[INFO_MSG_TO_ADDR_IDX]);
+    dist_cm = info_msg_get_dist_cm(&rx_buffer[INFO_MSG_DIST_CM_IDX]);
 
-      printf("{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}\n", from_addr, to_addr, dist_cm);
+    printf("{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}\n", from_addr, to_addr, dist_cm);
+}
+
+/*!
+ * @brief Sends a given message over UWB. This is a blocking function.
+ *
+ * @param msg pointer to the message to be sent
+ * @param msg_len length of the message
+ */
+static void send_msg(uint8_t *msg, size_t msg_len)
+{
+    tx_done = false;
+    // Set sequence number
+    msg[SEQ_NUM_IDX] = frame_seq_nb++;
+
+    dwt_writetxdata(msg_len, msg, 0);
+    dwt_writetxfctrl(msg_len + 2, 0, 0); // No ranging, no response expected
+
+    // Start transmission
+    dwt_starttx(DWT_START_TX_IMMEDIATE);
+
+    // Wait for TX confirmation
+    while (!tx_done) { };
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -167,8 +203,12 @@ int ds_twr_responder(void)
 
     /* Configure the TX spectrum parameters (power, PG delay and PG count) */
     dwt_configuretxrf(&txconfig_options);
-    
-    
+
+    /* Set PAN ID and master address */
+    dwt_setpanid(0xDECA);
+    dwt_setaddress16(MASTER_ADDR);
+    /* Enable frame filtering for data and beacon frames */
+    dwt_configureframefilter(DWT_FF_ENABLE_802_15_4, DWT_FF_DATA_EN | DWT_FF_BEACON_EN);
 
     /* Register the call-backs (SPI CRC error callback is not used). */
     dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb, NULL, NULL, NULL);
@@ -176,16 +216,13 @@ int ds_twr_responder(void)
     /* Enable wanted interrupts (TX confirmation, RX good frames, RX timeouts and RX errors). */
     dwt_setinterrupt(DWT_INT_TXFRS_BIT_MASK | DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFTO_BIT_MASK | DWT_INT_RXPTO_BIT_MASK | DWT_INT_RXPHE_BIT_MASK
                          | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK,
-        0, DWT_ENABLE_INT);
+                     0, DWT_ENABLE_INT);
 
     /*Clearing the SPI ready interrupt*/
     dwt_writesysstatuslo(DWT_INT_RCINIT_BIT_MASK | DWT_INT_SPIRDY_BIT_MASK);
 
     /* Install DW IC IRQ handler. */
     port_set_dwic_isr(dwt_isr);
-    
-
-
 
     /* Apply default antenna delay value. See NOTE 1 below. */
     dwt_setrxantennadelay(RX_ANT_DLY);
@@ -198,11 +235,61 @@ int ds_twr_responder(void)
     dwt_setpreambledetecttimeout(0);
     dwt_setrxtimeout(0);
 
-    /* Activate reception immediately. */
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    /* Set master address in message templates */
+    sync_msg[SRC_ADDR_IDX] = MASTER_ADDR & 0xFF;
+    sync_msg[SRC_ADDR_IDX + 1] = (MASTER_ADDR >> 8) & 0xFF;
+    token_msg[SRC_ADDR_IDX] = MASTER_ADDR & 0xFF;
+    token_msg[SRC_ADDR_IDX + 1] = (MASTER_ADDR >> 8) & 0xFF;
 
-    while (1) {}
+    /* Main TDMA master loop */
+    while (1)
+    {
+        /* Turn off receiver before transmitting */
+        dwt_forcetrxoff();
 
+        /* 1. Broadcast a sync message to all slaves */
+#ifdef DEBUG_MODE
+        printf("SYNC: Broadcasting sync message\n");
+#endif
+        send_msg(sync_msg, sizeof(sync_msg));
+#ifdef DEBUG_MODE
+        printf("SYNC: Sync message transmitted.\n");
+#endif
+        /* Brief sleep to allow slaves to process sync */
+        Sleep(SYNC_SLOT_MS);
+
+        /* 2. Grant token to each slave and listen for info messages */
+        for (int i = 0; i < NUM_SLAVES; i++)
+        {
+            dwt_forcetrxoff();
+
+            /* Prepare and send token message */
+            uint16_t slave_addr = slave_addresses[i];
+            token_msg[DST_ADDR_IDX] = slave_addr & 0xFF;
+            token_msg[DST_ADDR_IDX + 1] = (slave_addr >> 8) & 0xFF;
+#ifdef DEBUG_MODE
+            printf("TOKEN: Sending token to slave 0x%04X\n", slave_addr);
+#endif
+            send_msg(token_msg, sizeof(token_msg));
+#ifdef DEBUG_MODE
+            printf("TOKEN: Token to slave 0x%04X transmitted.\n", slave_addr);
+#endif
+            /* Listen for info messages during the slave's slot */
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            Sleep(SLOT_DURATION_MS);
+        }
+
+        /* Calculate remaining time in superframe and sleep */
+        int time_spent_ms = (NUM_SLAVES * SLOT_DURATION_MS) + SYNC_SLOT_MS;
+        if (SUPERFRAME_PERIOD_MS > time_spent_ms)
+        {
+#ifdef DEBUG_MODE
+            int sleep_time = SUPERFRAME_PERIOD_MS - time_spent_ms;
+            printf("MASTER: All tokens sent. Sleeping for %d ms.\n", sleep_time);
+#endif
+            Sleep(SUPERFRAME_PERIOD_MS - time_spent_ms);
+        }
+    }
 }
 
 bool frame_is_info(uint8_t* rx_buffer) {
@@ -231,14 +318,21 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     {
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
     }
+#ifdef DEBUG_MODE
+    printf("MASTER RX: Received frame, len %d\n", cb_data->datalength);
+#endif
 
     if (frame_is_info(rx_buffer)) {
+#ifdef DEBUG_MODE
+    printf("MASTER RX: Frame is info message.\n");
+#endif
       handle_info();
     }
     else {
-      #ifdef DEBUG_MODE
-        test_run_info((unsigned char *)"got sth");
-      #endif
+#ifdef DEBUG_MODE
+        uint16_t src_addr = get_src_addr(rx_buffer);
+        printf("MASTER RX: Frame is not info. From 0x%04X, FC: 0x%02X\n", src_addr, rx_buffer[9]);
+#endif
     }
     
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
@@ -292,6 +386,7 @@ static void rx_err_cb(const dwt_cb_data_t *cb_data)
 static void tx_conf_cb(const dwt_cb_data_t *cb_data)
 {
     (void)cb_data;
+    tx_done = true;
 }
 
 

@@ -54,7 +54,7 @@ extern "C"
 //#define TEST_DS_TWR_RESPONDER_STS
 
 #define TEST_DS_TWR_INITIATOR
-//#define TEST_DS_TWR_RESPONDER     // info receiver
+//#define TEST_DS_TWR_RESPONDER     // info receiver and master
 
 //#define TEST_DS_TWR_STS_SDC_INITIATOR
 //#define TEST_DS_TWR_STS_SDC_RESPONDER

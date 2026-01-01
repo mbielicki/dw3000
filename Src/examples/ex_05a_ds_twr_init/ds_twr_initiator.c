@@ -29,6 +29,23 @@
 
 #if defined(TEST_DS_TWR_INITIATOR)
 
+/* TDMA slave configuration */
+#define MASTER_ADDR          0x0072
+#define FUNC_CODE_SYNC       0xAA
+#define FUNC_CODE_TOKEN      0xBB
+
+/* FSM states */
+typedef enum
+{
+    SLAVE_STATE_WAIT_FOR_SYNC,
+    SLAVE_STATE_WAIT_FOR_TOKEN,
+    SLAVE_STATE_DO_RANGING_INIT,
+    SLAVE_STATE_RANGING_IN_PROGRESS
+} slave_fsm_state_t;
+
+static volatile slave_fsm_state_t current_state = SLAVE_STATE_WAIT_FOR_SYNC;
+static volatile bool twr_complete = false;
+
 extern void test_run_info(unsigned char *data);
 
 /* Example application name and version to display on LCD screen. */
@@ -55,14 +72,14 @@ static dwt_config_t config = {
 #define RNG_DELAY_MS 1000 //1000
 
 /* Default antenna delay values for 64 MHz PRF. See NOTE 1 below. */
-#define TX_ANT_DLY 16385
-#define RX_ANT_DLY 16385
+#define TX_ANT_DLY 16374
+#define RX_ANT_DLY 16374
 
 #define MY_COMMA_ADDRESS 0x00, MY_ADDRESS
 #define MY_FULL_ADDRESS (0x0000 | MY_ADDRESS)
-#define N_ANCHORS       6
+#define N_ANCHORS       4
 
-static uint16_t anchor_addrs[N_ANCHORS] = { 0x0008, 0x0069, 0x0098, 0x0094, 0x0035, 0x0099 };
+static uint16_t anchor_addrs[N_ANCHORS] = { 0x0072, 0x0099, 0x0098, 0x0008 };
 static int c_anchor;
 
 /* Frames used in the ranging process. See NOTE 2 below. */
@@ -204,6 +221,10 @@ void handle_final() {
 
     send_info(src_addr, distance_cm);
 
+#ifdef DEBUG_MODE
+    printf("SLAVE: TWR with 0x%04X complete. Distance: %u cm.\n", src_addr, distance_cm);
+#endif
+    twr_complete = true;
 }
 
 void send_poll() {
@@ -376,7 +397,6 @@ int ds_twr_initiator(void)
     }
 
     /* Configure DW IC. See NOTE 2 below. */
-    /* if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device */
     if (dwt_configure(&config))
     {
         test_run_info((unsigned char *)"CONFIG FAILED     ");
@@ -386,57 +406,85 @@ int ds_twr_initiator(void)
     /* Configure the TX spectrum parameters (power, PG delay and PG count) */
     dwt_configuretxrf(&txconfig_options);
 
+    /* Set our address and PAN ID. */
+    dwt_setpanid(0xDECA);
+    dwt_setaddress16(MY_FULL_ADDRESS);
 
+    /* Disable frame filtering. */
+    dwt_configureframefilter(DWT_FF_DISABLE, 0);
 
-    /* Register the call-backs (SPI CRC error callback is not used). */
+    /* Register the call-backs. */
     dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb, NULL, NULL, NULL);
-    /* Enable wanted interrupts (TX confirmation, RX good frames, RX timeouts and RX errors). */
+    /* Enable wanted interrupts. */
     dwt_setinterrupt(DWT_INT_TXFRS_BIT_MASK | DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFTO_BIT_MASK | DWT_INT_RXPTO_BIT_MASK | DWT_INT_RXPHE_BIT_MASK
                          | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK,
-                          0, DWT_ENABLE_INT);
+                     0, DWT_ENABLE_INT);
     /*Clearing the SPI ready interrupt*/
     dwt_writesysstatuslo(DWT_INT_RCINIT_BIT_MASK | DWT_INT_SPIRDY_BIT_MASK);
     /* Install DW IC IRQ handler. */
     port_set_dwic_isr(dwt_isr);
-    
 
-
-    /* Apply default antenna delay value. See NOTE 1 below. */
+    /* Apply default antenna delay value. */
     dwt_setrxantennadelay(RX_ANT_DLY);
     dwt_settxantennadelay(TX_ANT_DLY);
 
+    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
     dwt_setpreambledetecttimeout(0);
     dwt_setrxtimeout(0);
 
-    /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
-     * Note, in real low power applications the LEDs should not be used. */
-    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
-    // dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
-
-    #ifndef DOES_POLL
-
+    /* Set the initial state and start listening for TDMA SYNC messages. */
+    current_state = SLAVE_STATE_WAIT_FOR_SYNC;
+#ifdef DEBUG_MODE
+    printf("SLAVE: Starting. state -> WAIT_FOR_SYNC\n");
+#endif
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
-    while (1) {}
 
-    #else
-
-    /* Loop forever initiating ranging exchanges. */
+    /* Loop forever, waiting for our turn to range. */
     while (1)
     {
-        for(c_anchor = 0; c_anchor < N_ANCHORS; c_anchor++) {
-          if (anchor_addrs[c_anchor] == MY_FULL_ADDRESS) continue;
+        if (current_state == SLAVE_STATE_DO_RANGING_INIT)
+        {
+#ifdef DEBUG_MODE
+            printf("SLAVE: Starting ranging process.\n");
+#endif
+            current_state = SLAVE_STATE_RANGING_IN_PROGRESS;
 
-          set_dst_addr(tx_poll_msg, anchor_addrs[c_anchor]);
-          send_poll();
+            /* It's our turn to talk. Range with all configured peers. */
+            for (c_anchor = 0; c_anchor < N_ANCHORS; c_anchor++)
+            {
+                if (anchor_addrs[c_anchor] == MY_FULL_ADDRESS)
+                {
+                    continue;
+                }
 
-          wait(NEW_ANCHOR_DLY);
+#ifdef DEBUG_MODE
+                printf("SLAVE: Ranging with peer 0x%04X.\n", anchor_addrs[c_anchor]);
+#endif
+                set_dst_addr(tx_poll_msg, anchor_addrs[c_anchor]);
+
+                twr_complete = false;
+                send_poll();
+
+                /* Wait for the TWR exchange to complete, with a timeout. */
+                int timeout_ms = 200;
+                while (!twr_complete && timeout_ms-- > 0)
+                {
+                    Sleep(1);
+                }
+            }
+
+            /* Ranging finished, go back to waiting for the next superframe. */
+#ifdef DEBUG_MODE
+            printf("SLAVE: Ranging complete. state -> WAIT_FOR_SYNC\n");
+#endif
+            current_state = SLAVE_STATE_WAIT_FOR_SYNC;
+            dwt_forcetrxoff();
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
         }
 
-        wait(NEW_COORDS_DLY);
+        Sleep(10); /* Main loop sleep. */
     }
-
-    #endif
 }
 
 
@@ -451,15 +499,15 @@ int ds_twr_initiator(void)
  */
 static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 {
-    int i;
-
+#ifdef DEBUG_MODE
+    printf("SLAVE RX: rx_ok_cb entered. DataLen: %u\n", cb_data->datalength);
+#endif
     /* If the lock is already held, it means we are in the middle of processing an interrupt.
      * Return immediately to prevent re-entrancy and state corruption. */
     if (g_irq_lock)
     {
         return;
     }
-
     g_irq_lock = 1; // Acquire the lock
 
     /* A frame has been received, copy it to our local buffer. */
@@ -468,32 +516,90 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
     }
 
-    if (frame_is_poll_for_me(rx_buffer))
+    /* If we are in the middle of ranging, we only care about ranging messages. */
+    if (current_state == SLAVE_STATE_RANGING_IN_PROGRESS)
     {
+        if (frame_is_resp_for_me(rx_buffer))
+        {
 #ifdef DEBUG_MODE
-        printf("got poll from %x\n", rx_buffer[8]);
+            printf("SLAVE RX: RESP received from 0x%04X.\n", get_src_addr(rx_buffer));
 #endif
-        handle_poll();
+            handle_resp();
+        }
+        else if (frame_is_final_for_me(rx_buffer))
+        {
+#ifdef DEBUG_MODE
+            printf("SLAVE RX: FINAL received from 0x%04X.\n", get_src_addr(rx_buffer));
+#endif
+            handle_final();
+        }
+        /* Do nothing for other frames, let the RX timeout handle it */
+        g_irq_lock = 0;
+        return;
     }
-    else if (frame_is_resp_for_me(rx_buffer))
-    {
+
+    /* If not ranging, handle TDMA and poll messages. */
+    // Manually parse addresses in Little-Endian format to bypass buggy shared functions.
+    uint16_t src_addr = rx_buffer[7] | (rx_buffer[8] << 8);
+    uint16_t dst_addr = rx_buffer[5] | (rx_buffer[6] << 8);
+    uint8_t fn_code = rx_buffer[ALL_MSG_COMMON_LEN - 1];
+
 #ifdef DEBUG_MODE
-        printf("got resp from %x\n", rx_buffer[8]);
+    printf("SLAVE RX: Got frame. src=0x%04X, dst=0x%04X, fn_code=0x%02X\n", src_addr, dst_addr, fn_code);
 #endif
-        handle_resp();
+
+    /* Check for TDMA messages from the master */
+    if (src_addr == MASTER_ADDR)
+    {
+        if (fn_code == FUNC_CODE_SYNC)
+        {
+            if (current_state == SLAVE_STATE_WAIT_FOR_SYNC)
+            {
+                current_state = SLAVE_STATE_WAIT_FOR_TOKEN;
+#ifdef DEBUG_MODE
+                printf("SLAVE RX: SYNC received. state -> WAIT_FOR_TOKEN\n");
+#endif
+            }
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        }
+        else if (fn_code == FUNC_CODE_TOKEN && dst_addr == MY_FULL_ADDRESS)
+        {
+            if (current_state == SLAVE_STATE_WAIT_FOR_TOKEN)
+            {
+                current_state = SLAVE_STATE_DO_RANGING_INIT;
+#ifdef DEBUG_MODE
+                printf("SLAVE RX: TOKEN received. state -> DO_RANGING_INIT\n");
+#endif
+                /* Do not re-enable RX, main loop will start the ranging process. */
+            }
+            else
+            {
+                /* Received a token unexpectedly, reset state and listen for next sync. */
+                current_state = SLAVE_STATE_WAIT_FOR_SYNC;
+                dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            }
+        }
+        else
+        {
+            /* It's a message from the master, but not for us (e.g. another slave's token). Ignore and re-enable receiver. */
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        }
     }
-    else if (frame_is_final_for_me(rx_buffer))
+    /* Check for TWR messages */
+    else if (frame_is_poll_for_me(rx_buffer))
     {
+        /* Received a poll from a peer. We can respond if we are in a listening state. */
+        if (current_state == SLAVE_STATE_WAIT_FOR_SYNC || current_state == SLAVE_STATE_WAIT_FOR_TOKEN)
+        {
 #ifdef DEBUG_MODE
-        printf("got final from %x\n", rx_buffer[8]);
+            printf("SLAVE RX: POLL received from 0x%04X. Responding.\n", get_src_addr(rx_buffer));
 #endif
-        handle_final();
+            handle_poll();
+        }
     }
     else
     {
-#ifdef DEBUG_MODE
-        test_run_info((unsigned char *)"got -");
-#endif
+        /* Unrecognized frame, re-enable receiver. */
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
     }
 
@@ -511,9 +617,23 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
  */
 static void rx_to_cb(const dwt_cb_data_t *cb_data)
 {
+#ifdef DEBUG_MODE
+    printf("SLAVE RX: rx_to_cb entered. Status: 0x%08X\n", cb_data->status);
+#endif
     (void)cb_data;
     /* Set corresponding inter-frame delay. */
-
+    if (current_state == SLAVE_STATE_RANGING_IN_PROGRESS)
+    {
+#ifdef DEBUG_MODE
+        printf("SLAVE: RX timeout during ranging.\n");
+#endif
+        twr_complete = true;
+    }
+    else
+    {
+        /* Re-enable receiver - we are not ranging, just listening for TDMA frames. */
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    }
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -527,9 +647,23 @@ static void rx_to_cb(const dwt_cb_data_t *cb_data)
  */
 static void rx_err_cb(const dwt_cb_data_t *cb_data)
 {
+#ifdef DEBUG_MODE
+    printf("SLAVE RX: rx_err_cb entered. Status: 0x%08X\n", cb_data->status);
+#endif
     (void)cb_data;
     /* Set corresponding inter-frame delay. */
-
+    if (current_state == SLAVE_STATE_RANGING_IN_PROGRESS)
+    {
+#ifdef DEBUG_MODE
+        printf("SLAVE: RX error during ranging.\n");
+#endif
+        twr_complete = true;
+    }
+    else
+    {
+        /* Re-enable receiver - we are not ranging, just listening for TDMA frames. */
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    }
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
