@@ -29,10 +29,24 @@
 
 #if defined(TEST_DS_TWR_INITIATOR)
 
+static inline uint16_t get_addr_from_buffer(uint8_t* buffer, int offset)
+{
+    return buffer[offset] | (buffer[offset+1] << 8);
+}
+
+static inline void set_addr_in_buffer(uint8_t* buffer, int offset, uint16_t address)
+{
+    buffer[offset] = address & 0xFF;
+    buffer[offset+1] = (address >> 8) & 0xFF;
+}
+
 /* TDMA slave configuration */
 #define MASTER_ADDR          0x0072
 #define FUNC_CODE_SYNC       0xAA
 #define FUNC_CODE_TOKEN      0xBB
+#define POLL_MSG             0x21
+#define RESP_MSG             0x10
+#define FINAL_MSG            0x23
 
 /* FSM states */
 typedef enum
@@ -40,7 +54,8 @@ typedef enum
     SLAVE_STATE_WAIT_FOR_SYNC,
     SLAVE_STATE_WAIT_FOR_TOKEN,
     SLAVE_STATE_DO_RANGING_INIT,
-    SLAVE_STATE_RANGING_IN_PROGRESS
+    SLAVE_STATE_RANGING_IN_PROGRESS,
+    SLAVE_STATE_RESPONDING
 } slave_fsm_state_t;
 
 static volatile slave_fsm_state_t current_state = SLAVE_STATE_WAIT_FOR_SYNC;
@@ -72,10 +87,10 @@ static dwt_config_t config = {
 #define RNG_DELAY_MS 1000 //1000
 
 /* Default antenna delay values for 64 MHz PRF. See NOTE 1 below. */
-#define TX_ANT_DLY 16374
-#define RX_ANT_DLY 16374
+#define TX_ANT_DLY 16371
+#define RX_ANT_DLY 16371
 
-#define MY_COMMA_ADDRESS 0x00, MY_ADDRESS
+#define MY_COMMA_ADDRESS MY_ADDRESS, 0x00
 #define MY_FULL_ADDRESS (0x0000 | MY_ADDRESS)
 #define N_ANCHORS       4
 
@@ -142,67 +157,80 @@ static uint8_t tx_info_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA
 #define INFO_MSG_TO_ADDR_IDX  10
 #define INFO_MSG_DIST_CM_IDX  12
 #define INFO_TX_TO_RX_DLY_UUS 200
-void send_info(uint16_t to_addr, uint16_t dist_cm) {
-    
+static void send_info(uint16_t frame_dst_addr, uint16_t payload_to_addr, uint16_t dist_cm)
+{
     dwt_forcetrxoff();
-    /* Write frame data to DW IC and prepare transmission. See NOTE 9 below. */
+    /* Write frame data to DW IC and prepare transmission. */
     tx_info_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
 
-    info_msg_set_to_addr(&tx_info_msg[INFO_MSG_TO_ADDR_IDX], to_addr);
+    set_addr_in_buffer(tx_info_msg, 5, frame_dst_addr); // Set MAC destination
+    info_msg_set_to_addr(&tx_info_msg[INFO_MSG_TO_ADDR_IDX], payload_to_addr);
     info_msg_set_dist_cm(&tx_info_msg[INFO_MSG_DIST_CM_IDX], dist_cm);
 
-
     dwt_writetxdata(sizeof(tx_info_msg), tx_info_msg, 0);  /* Zero offset in TX buffer. */
-    dwt_writetxfctrl(sizeof(tx_info_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging. */
+    dwt_writetxfctrl(sizeof(tx_info_msg) + FCS_LEN, 0, 0); /* Zero offset in TX buffer, no ranging. */
+    dwt_starttx(DWT_START_TX_IMMEDIATE);
+    Sleep(5); // Small delay to ensure TX is complete before the calling function re-enables the receiver.
 
-    dwt_setrxaftertxdelay(INFO_TX_TO_RX_DLY_UUS);
-    dwt_setpreambledetecttimeout(0);
-    dwt_setrxtimeout(0);
-
-    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
-    
     frame_seq_nb++;
-    
-    #ifdef DEBUG_MODE
-      printf("info sent");
-    #endif
+
+#ifdef DEBUG_MODE
+    printf("info sent.\n");
+#endif
 }
 
 uint32_t poll_rx_ts_32;
 char json[80];
-void handle_final() {
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn report_distance_to_master()
+ *
+ * @brief This function formats the calculated distance into a JSON string and sends it to the master node.
+ *
+ * @param  distance_cm  The calculated distance in centimeters.
+ *
+ * @return  none
+ */
+static void report_distance_to_master(uint16_t distance_cm)
+{
+    uint16_t initiator_addr = get_addr_from_buffer(rx_buffer, 7);
+    sprintf(json, "{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}", MY_FULL_ADDRESS, initiator_addr, distance_cm);
+    test_run_info((unsigned char *)json);
+    send_info(MASTER_ADDR, initiator_addr, distance_cm);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn calculate_distance_from_final()
+ *
+ * @brief This is the responder's distance calculation routine. It computes the distance from the timestamps
+ *        and sends the result to the master.
+ *
+ * @param  none
+ *
+ * @return  none
+ */
+static void calculate_distance_from_final(void)
+{
     uint64_t resp_tx_ts, final_rx_ts;
     uint32_t resp_tx_ts_32, final_rx_ts_32;
 
     uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
-    double tag_comm_time, anchor_comm_time;
+    double Ra, Rb, Da, Db;
     int64_t tof_dtu;
     double tof;
     double distance;
-    uint16_t src_addr;
-    double Ra, Rb, Da, Db;
-    
-    src_addr = get_src_addr(rx_buffer);
+
+    /* Retrieve response transmission and final reception timestamps. */
+    resp_tx_ts = get_tx_timestamp_u64();
+    final_rx_ts = get_rx_timestamp_u64();
 
     /* Get timestamps embedded in the final message. */
     final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
     final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
     final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
 
-    /* Retrieve response transmission and final reception timestamps. */
-    resp_tx_ts = get_tx_timestamp_u64();
-    final_rx_ts = get_rx_timestamp_u64();
-
-    /* Compute time of flight. 32-bit subtractions give correct answers even if clock has wrapped. See NOTE 12 below. */
+    /* Compute time of flight. 32-bit subtractions give correct answers even if clock has wrapped. */
     resp_tx_ts_32 = (uint32_t)resp_tx_ts;
     final_rx_ts_32 = (uint32_t)final_rx_ts;
-
-    #ifdef DEBUG_MODE
-    printf("poll_rx_ts: %x ", poll_rx_ts_32);
-    printf("resp_rx_ts: %x ", resp_tx_ts_32);
-    printf("final_rx_ts: %x\n", final_rx_ts_32);
-
-    #endif
 
     Ra = (double)(resp_rx_ts - poll_tx_ts);
     Rb = (double)(final_rx_ts_32 - resp_tx_ts_32);
@@ -213,16 +241,26 @@ void handle_final() {
     tof = tof_dtu * DWT_TIME_UNITS;
     distance = tof * SPEED_OF_LIGHT;
 
-    /* Display computed distance */
     uint16_t distance_cm = distance * 100;
-    sprintf(json, "{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}", MY_FULL_ADDRESS, src_addr, distance_cm);
-    test_run_info((unsigned char *)json);
+    report_distance_to_master(distance_cm);
+}
 
 
-    send_info(src_addr, distance_cm);
-
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn conclude_initiator_exchange()
+ *
+ * @brief This function is called by the initiator of a TWR exchange when it receives the final confirmation,
+ *        concluding its part of the exchange.
+ *
+ * @param  none
+ *
+ * @return  none
+ */
+static void conclude_initiator_exchange(void)
+{
 #ifdef DEBUG_MODE
-    printf("SLAVE: TWR with 0x%04X complete. Distance: %u cm.\n", src_addr, distance_cm);
+    uint16_t src_addr = get_addr_from_buffer(rx_buffer, 7);
+    printf("SLAVE (as initiator): TWR with 0x%04X complete.\n", src_addr);
 #endif
     twr_complete = true;
 }
@@ -245,11 +283,11 @@ void send_poll() {
     frame_seq_nb++;
     
     #ifdef DEBUG_MODE
-      printf("polling %x", tx_poll_msg[6]);
+      printf("polling 0x%04X", get_addr_from_buffer(tx_poll_msg, 5));
     #endif
 }
 
-#define POLL_RX_TO_RESP_TX_DLY_UUS 700
+#define POLL_RX_TO_RESP_TX_DLY_UUS 2000
 #define RX_AFTER_RESP_DLY 700
 static uint64_t poll_rx_ts;
 static uint64_t resp_tx_ts;
@@ -257,7 +295,7 @@ static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA
 
 static uint16_t tag_address;
 
-void handle_poll() {
+void process_incoming_poll() {
       uint32_t resp_tx_time;
       int ret;
 
@@ -277,8 +315,8 @@ void handle_poll() {
       resp_tx_ts = (((uint64_t)(resp_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
 
       /* Write and send resp message. See NOTE 9 below. */
-      tag_address = get_src_addr(rx_buffer);
-      set_dst_addr(tx_resp_msg, tag_address);
+      tag_address = get_addr_from_buffer(rx_buffer, 7);
+      set_addr_in_buffer(tx_resp_msg, 5, tag_address);
       tx_resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
       dwt_writetxdata(sizeof(tx_resp_msg), tx_resp_msg, 0); /* Zero offset in TX buffer. */
       dwt_writetxfctrl(sizeof(tx_resp_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging bit set. */
@@ -288,6 +326,7 @@ void handle_poll() {
       /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 13 below. */
       if (ret == DWT_SUCCESS)
       {
+          current_state = SLAVE_STATE_RESPONDING;
           frame_seq_nb++;
           #ifdef DEBUG_MODE
            printf("sent resp to %x", tag_address);
@@ -299,7 +338,7 @@ void handle_poll() {
       }
 }
 
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 700
+#define RESP_RX_TO_FINAL_TX_DLY_UUS 2000
 #define RX_AFTER_FINAL_DLY 700
 
 static uint64_t resp_rx_ts;
@@ -308,7 +347,7 @@ static uint64_t poll_tx_ts;
 
 static uint8_t tx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0x00, 0x00, MY_COMMA_ADDRESS, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-void handle_resp() {
+void process_incoming_response() {
       uint32_t final_tx_time;
       int ret;
 
@@ -331,8 +370,8 @@ void handle_resp() {
       final_msg_set_ts(&tx_final_msg[FINAL_MSG_FINAL_TX_TS_IDX], final_tx_ts);
 
       /* Write and send final message. See NOTE 9 below. */
-      tag_address = get_src_addr(rx_buffer);
-      set_dst_addr(tx_final_msg, tag_address);
+      tag_address = get_addr_from_buffer(rx_buffer, 7);
+      set_addr_in_buffer(tx_final_msg, 5, tag_address);
       tx_final_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
       dwt_writetxdata(sizeof(tx_final_msg), tx_final_msg, 0); /* Zero offset in TX buffer. */
       dwt_writetxfctrl(sizeof(tx_final_msg) + FCS_LEN, 0, 1); /* Zero offset in TX buffer, ranging bit set. */
@@ -461,7 +500,7 @@ int ds_twr_initiator(void)
 #ifdef DEBUG_MODE
                 printf("SLAVE: Ranging with peer 0x%04X.\n", anchor_addrs[c_anchor]);
 #endif
-                set_dst_addr(tx_poll_msg, anchor_addrs[c_anchor]);
+                set_addr_in_buffer(tx_poll_msg, 5, anchor_addrs[c_anchor]);
 
                 twr_complete = false;
                 send_poll();
@@ -519,29 +558,51 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     /* If we are in the middle of ranging, we only care about ranging messages. */
     if (current_state == SLAVE_STATE_RANGING_IN_PROGRESS)
     {
-        if (frame_is_resp_for_me(rx_buffer))
+        /* Check the frame is a response or final message addressed to us */
+        uint16_t dst_addr = get_addr_from_buffer(rx_buffer, 5);
+        if (dst_addr == MY_FULL_ADDRESS)
         {
+            uint8_t fn_code = rx_buffer[ALL_MSG_COMMON_LEN - 1];
+            if (fn_code == RESP_MSG)
+            {
 #ifdef DEBUG_MODE
-            printf("SLAVE RX: RESP received from 0x%04X.\n", get_src_addr(rx_buffer));
+                printf("SLAVE RX: RESP received from 0x%04X.\n", get_addr_from_buffer(rx_buffer, 7));
 #endif
-            handle_resp();
-        }
-        else if (frame_is_final_for_me(rx_buffer))
-        {
-#ifdef DEBUG_MODE
-            printf("SLAVE RX: FINAL received from 0x%04X.\n", get_src_addr(rx_buffer));
-#endif
-            handle_final();
+                process_incoming_response();
+            }
+            else if (fn_code == FINAL_MSG)
+            {
+                conclude_initiator_exchange();
+            }
         }
         /* Do nothing for other frames, let the RX timeout handle it */
         g_irq_lock = 0;
         return;
     }
+    else if (current_state == SLAVE_STATE_RESPONDING)
+    {
+        uint16_t dst_addr = get_addr_from_buffer(rx_buffer, 5);
+        if (dst_addr == MY_FULL_ADDRESS)
+        {
+            uint8_t fn_code = rx_buffer[ALL_MSG_COMMON_LEN - 1];
+            if (fn_code == FINAL_MSG)
+            {
+#ifdef DEBUG_MODE
+                printf("SLAVE (as responder): FINAL received. Calculating distance.\n");
+#endif
+                calculate_distance_from_final();
+                /* This slave's role as a responder is complete. Go back to listening for our token. */
+                current_state = SLAVE_STATE_WAIT_FOR_TOKEN;
+                dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            }
+        }
+        g_irq_lock = 0;
+        return;
+    }
 
     /* If not ranging, handle TDMA and poll messages. */
-    // Manually parse addresses in Little-Endian format to bypass buggy shared functions.
-    uint16_t src_addr = rx_buffer[7] | (rx_buffer[8] << 8);
-    uint16_t dst_addr = rx_buffer[5] | (rx_buffer[6] << 8);
+    uint16_t src_addr = get_addr_from_buffer(rx_buffer, 7);
+    uint16_t dst_addr = get_addr_from_buffer(rx_buffer, 5);
     uint8_t fn_code = rx_buffer[ALL_MSG_COMMON_LEN - 1];
 
 #ifdef DEBUG_MODE
@@ -586,15 +647,15 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
         }
     }
     /* Check for TWR messages */
-    else if (frame_is_poll_for_me(rx_buffer))
+    else if (dst_addr == MY_FULL_ADDRESS && fn_code == POLL_MSG)
     {
         /* Received a poll from a peer. We can respond if we are in a listening state. */
         if (current_state == SLAVE_STATE_WAIT_FOR_SYNC || current_state == SLAVE_STATE_WAIT_FOR_TOKEN)
         {
 #ifdef DEBUG_MODE
-            printf("SLAVE RX: POLL received from 0x%04X. Responding.\n", get_src_addr(rx_buffer));
+            printf("SLAVE RX: POLL received from 0x%04X. Responding.\n", src_addr);
 #endif
-            handle_poll();
+            process_incoming_poll();
         }
     }
     else

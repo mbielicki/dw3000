@@ -35,7 +35,7 @@ extern void test_run_info(unsigned char *data);
 #define NUM_SLAVES           3
 static const uint16_t slave_addresses[NUM_SLAVES] = { 0x0099, 0x0098, 0x0008 };
 #define SUPERFRAME_PERIOD_MS 400
-#define SLOT_DURATION_MS     150
+#define SLOT_DURATION_MS     1000
 #define SYNC_SLOT_MS         5
 
 #define FUNC_CODE_SYNC       0xAA
@@ -207,8 +207,8 @@ int ds_twr_responder(void)
     /* Set PAN ID and master address */
     dwt_setpanid(0xDECA);
     dwt_setaddress16(MASTER_ADDR);
-    /* Enable frame filtering for data and beacon frames */
-    dwt_configureframefilter(DWT_FF_ENABLE_802_15_4, DWT_FF_DATA_EN | DWT_FF_BEACON_EN);
+    /* Disable frame filtering. */
+    dwt_configureframefilter(DWT_FF_DISABLE, 0);
 
     /* Register the call-backs (SPI CRC error callback is not used). */
     dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb, NULL, NULL, NULL);
@@ -330,7 +330,7 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     }
     else {
 #ifdef DEBUG_MODE
-        uint16_t src_addr = get_src_addr(rx_buffer);
+        uint16_t src_addr = rx_buffer[7] | (rx_buffer[8] << 8);
         printf("MASTER RX: Frame is not info. From 0x%04X, FC: 0x%02X\n", src_addr, rx_buffer[9]);
 #endif
     }
