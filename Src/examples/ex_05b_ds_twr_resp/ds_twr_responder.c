@@ -131,9 +131,11 @@ void handle_info()
     uint16_t to_addr;
     uint16_t dist_cm;
 
-    from_addr = get_src_addr(rx_buffer);
-    to_addr = info_msg_get_to_addr(&rx_buffer[INFO_MSG_TO_ADDR_IDX]);
-    dist_cm = info_msg_get_dist_cm(&rx_buffer[INFO_MSG_DIST_CM_IDX]);
+                from_addr = rx_buffer[SRC_ADDR_IDX] | (rx_buffer[SRC_ADDR_IDX+1] << 8);
+
+                to_addr = rx_buffer[INFO_MSG_TO_ADDR_IDX] | (rx_buffer[INFO_MSG_TO_ADDR_IDX+1] << 8);
+
+                dist_cm = rx_buffer[INFO_MSG_DIST_CM_IDX] | (rx_buffer[INFO_MSG_DIST_CM_IDX+1] << 8);
 
     printf("{\"from\": \"%x\", \"to\": \"%x\", \"dist\": \"%i\"}\n", from_addr, to_addr, dist_cm);
 }
